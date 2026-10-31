@@ -1,0 +1,6 @@
+.env
+.streamforge/
+data/
+qa-artifacts/
+node_modules/
+dist/
