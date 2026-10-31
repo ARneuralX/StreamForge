@@ -11,6 +11,7 @@
 - Phase 2A stage 4 done: `!vote N`, `vote N` and `+1` work with bot filtering and one vote per account per request. Settings save manual, vote/time threshold and channel-point modes. Isolated checks passed for vote threshold, time threshold and simulated point-redemption builds.
 - Phase 2A stage 5 done: Undo/Rollback controls query per-widget Git history; rollback restores the previous source only after safety checks and commits the restore. A mods-only `undo <slug>` chat command uses the same handler. Verified the no-history response and disabled control; the success path needs a second-version integration test.
 - Phase 2A stage 6 done: a natural 20 adds a visible animated fireworks burst and sparkle cue. `npm run test:widgets` scans and mock-mounts every starter widget and deterministically asserts the fireworks state.
-- Next: perform the Phase 2A final browser/TypeScript check, then read Phase 2B.
-- Known issues: Twitch OAuth callback/token exchange and automatic Twitch connections are not implemented. Real Codex builds remain disabled for this run. Mock pipeline builds a fixed safe fixture and does not interpret requests into custom source. Undo/version history and countdown/time-trigger auto-build are incomplete.
+- Phase 2A complete: all six stages are committed. Final Chrome smoke rendered Overview, Build queue, Widgets, Library and Settings at the mock server. `npx tsc --noEmit` and `npm run test:widgets` passed.
+- Next: read `phase2b-prompt.md` and start Phase 2B.
+- Known issues: Twitch OAuth callback/token exchange and automatic Twitch connections are not implemented. Real Codex builds remain disabled for this run. Mock pipeline builds a fixed safe fixture and does not interpret requests into custom source. Successful multi-version Undo still needs an integration run.
 - Unverified: Chrome emitted macOS headless display warnings; no full browser console audit has been run. No real Twitch traffic or real Codex build was run.

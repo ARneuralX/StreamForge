@@ -44,3 +44,5 @@ Chat voting supports `!vote 2`, `vote 2` and `+1` (one vote per account per requ
 The Widgets page shows version counts and Undo / Rollback controls. Undo is enabled when Git has an earlier committed version for that widget; the restored source must pass the same scan and mock-mount check. Moderators can also submit `undo <slug>` through the chat ingestion endpoint.
 
 The dice widget displays an animated fireworks burst and a sparkle sound cue for a natural 20. Verify this locally with `npm run test:widgets`; the check controls the roll result and confirms the effect is present.
+
+Phase 2A verification: `npx tsc --noEmit` and `npm run test:widgets` passed. Isolated checks covered persistence across restart, request redaction, one-vote-per-user, vote/time/channel-point approval, feed stages and safety flags. Headless Chrome rendered all five dashboard pages and the 1920 × 1080 overlay.
