@@ -61,6 +61,10 @@ socket.addEventListener("message", (event) => {
     item.innerHTML=`<strong>${escapeText(message.request.text)}</strong><br><span>${escapeText(message.request.requester)} · ${escapeText(message.stage)} · ${elapsed}s</span><div>${escapeText(message.detail)}</div>${checks}<div class="progress"><i style="width:${labels[message.stage]||15}%"></i></div>`;
     document.querySelector("#feed-items").prepend(item);
   }
+  if (message.type === "draftPreview" && document.querySelector("#feed").hidden === false) {
+    const item=document.createElement("div");item.className="feed-item";item.textContent=`Now building · ${message.request?.text||"Safe draft"} · Preview - not live yet`;
+    const frame=document.createElement("iframe");frame.className="draft-thumbnail";frame.title="Preview - not live yet";frame.setAttribute("sandbox","allow-scripts");frame.src=message.url;item.append(frame);document.querySelector("#feed-items").prepend(item);
+  }
   if (message.type === "request" || message.type === "queue") load();
 });
 window.addEventListener("message", async (event) => {

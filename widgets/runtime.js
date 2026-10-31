@@ -1,6 +1,7 @@
 const params = new URLSearchParams(location.search);
 const widgetId = params.get("id");
-if (params.get("preview") === "1") document.body.style.background = "#13111b";
+const previewBackgrounds = { dark: "#17151f", bright: "#f5f5f5", checker: "conic-gradient(#777 25%, #fff 0 50%, #777 0 75%, #fff 0) 0 / 24px 24px" };
+if (params.get("preview") === "1") document.body.style.background = previewBackgrounds[params.get("bg")] || previewBackgrounds.dark;
 const listeners = new Map();
 const root = document.querySelector("#widget");
 const api = {

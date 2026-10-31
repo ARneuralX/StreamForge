@@ -8,8 +8,9 @@ const pages = { overview, queue, widgets, library, settings };
 const root = document.querySelector("#page");
 const links = [...document.querySelectorAll("[data-page]")];
 let state = { requests: [], widgets: [], settings: {} };
+let latestDraftPreview;
 
-async function refresh() { try { state = await (await fetch("/api/state")).json(); } catch { /* page reports local API errors */ } }
+async function refresh() { try { state = await (await fetch("/api/state")).json(); state.draftPreview=latestDraftPreview; } catch { /* page reports local API errors */ } }
 async function render() {
   await refresh();
   const key = location.hash.slice(1) || "overview";
@@ -32,4 +33,4 @@ async function status() {
 }
 status();
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-socket.addEventListener("message", () => render());
+socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message; } catch { /* ignore malformed transport data */ } render(); });

@@ -54,3 +54,7 @@ The Library contains six starter widgets: Prediction Scoreboard, Chat Boss Bar, 
 ## Health and recovery
 
 Settings shows the current mock service health, queue depth and last safe error. Build settings include a retry preference (off by default) and a bounded build timeout. The current development runner is deterministic mock mode; it does not start real Codex builds or Twitch connections. Sandboxed widget runtime failures disable the affected widget and offer Undo when a previous Git version exists. A safe fallback panel appears if the dashboard section or overlay cannot load.
+
+## Build Studio
+
+Open **Build queue** to review each request and its human-readable build stages. Once the mock runner writes a draft and the static scan and mock mount pass, the Studio shows **Preview - not live yet** inside a network-blocked sandbox. Dark, bright and checker backgrounds are preview-only. The event buttons send simulated events through the local mock API; the same draft preview receives the selected event.

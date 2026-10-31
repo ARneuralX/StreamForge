@@ -110,6 +110,7 @@ async function widgetCommitHistory(widgetId: string): Promise<string[]> {
   } catch { return []; }
 }
 const recentBuilds = new Map<string, number>();
+const safeDrafts = new Map<string, string>();
 const blocklist = [/\bmalware\b/iu, /\bsteal\s+(?:a\s+)?token\b/iu, /\bkeylogger\b/iu];
 
 const app = express();
@@ -136,6 +137,14 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.sett
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
   res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, codexVerification: store.codexVerification });
+});
+app.get("/api/requests/:id/preview", (req, res) => {
+  const source = safeDrafts.get(req.params.id);
+  if (!source) return res.status(404).send("Draft preview is not available.");
+  const safeSource = source.replace(/<\/script/giu, "<\\/script").replace(/^\s*export\s+default\s+/u, "return ");
+  const background = req.query.bg === "bright" ? "#f5f5f5" : req.query.bg === "checker" ? "conic-gradient(#777 25%, #fff 0 50%, #777 0 75%, #fff 0) 0 / 24px 24px" : "#17151f";
+  res.type("html").setHeader("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src data:");
+  res.send(`<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:12px;background:${background};color:#f6f2ff;font:14px system-ui}#widget{min-height:120px}</style><main id="widget"></main><script>const listeners=new Map();const api={root:document.querySelector('#widget'),on(n,f){listeners.set(n,[...(listeners.get(n)||[]),f])},sound:{play(){}},timers:{setTimeout,clearTimeout,setInterval,clearInterval},storage:{get(){return null},set(){}}};window.addEventListener('message',e=>{if(e.data?.kind==='streamforge:event')for(const fn of listeners.get(e.data.event?.type)||[])try{fn(e.data.event.payload||{})}catch(err){parent.postMessage({kind:'streamforge:draft-error',detail:String(err?.message||'Widget error').slice(0,160)},'*')}});try{const widget=(()=>{${safeSource}})();widget.mount(api)}catch(err){document.querySelector('#widget').textContent='Preview blocked: '+String(err?.message||'widget error').slice(0,120)}</script>`);
 });
 app.get("/api/library", (_req, res) => res.json(store.library));
 app.get("/api/widgets/:id/export", async (req, res) => {
@@ -263,6 +272,9 @@ async function mockBuild(request: Request): Promise<void> {
     setState(request, "checking"); buildFeed(request, "Safety checks", "Running syntax, static scan and mock mount checks"); await persist();
     const result = await checkWidgetSource(source);
     if (!result.ok) throw new Error(result.reason || "Widget check failed.");
+    safeDrafts.set(request.id, source);
+    buildFeed(request, "Safety checks", "Draft passed the static scan and mock mount; preview is not live yet", result.checks);
+    publish({ type: "draftPreview", request: publicRequest(request), requestId: request.id, url: `/api/requests/${request.id}/preview`, widgetId });
     if (!isRemix) await mkdir(path.join(widgetRoot, widgetId), { recursive: true });
     const promotedPath = path.join(widgetRoot, widgetId, "index.js");
     const promoteTemp = `${promotedPath}.${request.id}.tmp`;
@@ -290,6 +302,7 @@ async function mockBuild(request: Request): Promise<void> {
     buildFeed(request, "Rolled back", request.failure); await persist();
   }
   if (draftDir) await rm(draftDir, { recursive: true, force: true }).catch(() => {});
+  setTimeout(() => safeDrafts.delete(request.id), 5 * 60_000).unref();
 }
 let buildChain: Promise<void> = Promise.resolve();
 function runBuild(request: Request): Promise<void> {
