@@ -37,4 +37,4 @@ Widget modules export `default { meta, mount(api) }`; the current contract is do
 
 The Phase 2A mock queue now stores requests, history, votes and widget metadata in ignored JSON state. Approving a request runs a fixed mock fixture through syntax, static safety and mock-mount checks; it does not invoke Codex or convert the request into custom code. The overlay layout engine packs declared widget sizes into the 1920 × 1080 canvas and supports saved manual coordinates.
 
-To preview the current overlay, use `http://localhost:3000/overlay/?feed=1`. Build requests and vote counts appear in the Up next panel. Widget positions can be saved in the Widgets page using canvas coordinates; the layout engine shifts other widgets around them.
+To preview the current overlay, use `http://localhost:3000/overlay/?feed=1`. The feed shows Received, Approved, Planning, Writing code, Safety checks and Live/Rolled back with elapsed time and check results. Build requests and vote counts appear in the Up next panel. Widget positions can be saved in the Widgets page using canvas coordinates; the layout engine shifts other widgets around them.

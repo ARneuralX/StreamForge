@@ -172,6 +172,7 @@ app.post("/api/requests", async (req, res) => {
   store.requestHistory.unshift({ ...request });
   await persist();
   publish({ type: "request", request: publicRequest(request) });
+  buildFeed(request, "Received", "Request added to the queue");
   res.status(201).json(publicRequest(request));
 });
 app.post("/api/chat", async (req, res) => {
