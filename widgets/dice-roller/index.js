@@ -1,5 +1,5 @@
 export default {
-  meta: { title: "Dice Roller", description: "Updated by a safe mock remix", width: 440, height: 190, x: 32, y: 32, anchor: "top-left" },
+  meta: { title: "Dice Roller", description: "Roll a die with chat using !roll d20.", width: 440, height: 190, x: 32, y: 32, anchor: "top-left" },
   mount(api) {
     const title = document.createElement("h2");
     title.textContent = "🎲 Chat Dice";
