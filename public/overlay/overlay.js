@@ -1,4 +1,5 @@
 import { computeLayout } from "/overlay/layout.js";
+import { drawRecap } from "/dashboard/recap.js";
 
 const params = new URLSearchParams(location.search);
 const bg = params.get("bg");
@@ -26,6 +27,7 @@ function positionFrames() {
 async function load() {
  try {
   const data = await (await fetch("/api/state")).json();
+  if(params.get("recap")==="1"){const history=await(await fetch("/api/sessions")).json();const session=history.current||history.sessions?.[0]||{requests:0,liveBuilds:0,uniqueChatters:0,hypeSeries:[],topContributors:[]};document.querySelector("#canvas").classList.add("recap-mode");document.querySelector("#recap-overlay").hidden=false;document.querySelector("#widgets").hidden=true;drawRecap(document.querySelector("#recap-canvas"),session,data.settings.themeTokens,"landscape");return;}
   themeTokens=data.settings.themeTokens;
   overlayHypeMeter=data.settings.overlayHypeMeter===true;document.querySelector("#hype-meter").hidden=!overlayHypeMeter;if(data.hype)updateHype(data.hype);
   if(!["off","reduced","minimal"].includes(params.get("safeMode")))safeModeLevel=data.settings.safeMode||"off";

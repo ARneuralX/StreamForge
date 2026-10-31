@@ -3,3 +3,6 @@
 .runner-hint{position:absolute;top:82px;left:12px;max-width:min(440px,calc(100vw - 24px));padding:9px 12px;border:1px solid #ffffff35;border-radius:12px;background:#120e20d9;color:#e9e2f5;font-size:11px;line-height:1.45}
 
 .hype-meter{position:absolute;right:18px;top:18px;display:grid;grid-template-columns:auto auto;gap:4px 12px;align-items:center;min-width:150px;padding:10px 13px;border:1px solid #ffffff45;border-radius:13px;background:#11101de8;color:#fff;font-size:11px;font-weight:700;letter-spacing:.08em}.hype-meter strong{font-size:20px;letter-spacing:0}.hype-meter meter{grid-column:1/-1;width:100%;height:8px;accent-color:#8afff0}
+
+.recap-overlay{position:absolute;inset:0;display:grid;place-items:center;background:#08070dec;animation:recap-enter .8s ease-out both}.recap-overlay canvas{width:min(96vw,177.8vh);height:min(96vh,54vw);object-fit:contain;box-shadow:0 0 48px #a9f5dc25}@keyframes recap-enter{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}#canvas.recap-mode .mode-badge,#canvas.recap-mode .remix-hint,#canvas.recap-mode .runner-hint{display:none}
+.recap-overlay[hidden]{display:none}

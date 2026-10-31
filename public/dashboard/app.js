@@ -3,8 +3,9 @@ import { queue } from "./pages/queue.js";
 import { widgets } from "./pages/widgets.js";
 import { library } from "./pages/library.js";
 import { settings } from "./pages/settings.js";
+import { sessions } from "./pages/sessions.js";
 
-const pages = { overview, queue, widgets, library, settings };
+const pages = { overview, queue, widgets, library, settings, sessions };
 const root = document.querySelector("#page");
 const links = [...document.querySelectorAll("[data-page]")];
 let state = { requests: [], widgets: [], settings: {} };

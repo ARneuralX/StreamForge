@@ -61,3 +61,5 @@ Run `npx tsc --noEmit`, `npm run test:widgets`, and `npm run test:templates`. To
 The Codex SDK Step 0 gate was run by the user. The verification task and real build button were not exercised during development.
 
 The Hype meter uses rolling aggregate chat and event activity with calm/warm/hot/peak levels, a trend indicator, sensitivity, manual boost, mute, and reactive-widget controls. The separate chat-energy slider is marked SIMULATED and expires after 15 seconds. It exposes no chatter names; simulated activity never contacts Twitch.
+
+Stream sessions auto-start on first activity and store aggregate JSON under ignored `data/sessions/`. The Sessions & Recap page exports themed portrait/landscape PNGs, recap JSON, and an end-of-stream overlay. Chatter names are excluded unless explicitly enabled.

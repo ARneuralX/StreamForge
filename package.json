@@ -15,7 +15,8 @@
     "test:templates": "npm run build && node scripts/check-templates.mjs",
     "qa:phase3": "npm run build && node scripts/qa-phase3.mjs",
     "test:passport": "npm run build && node scripts/check-passport.mjs",
-    "test:hype": "npm run build && node scripts/check-hype.mjs && node scripts/check-hype-api.mjs"
+    "test:hype": "npm run build && node scripts/check-hype.mjs && node scripts/check-hype-api.mjs",
+    "test:sessions": "npm run build && node scripts/check-sessions.mjs && node scripts/check-sessions-api.mjs"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.166.0",

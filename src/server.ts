@@ -13,6 +13,7 @@ import { validateRequestText } from "./security/request-checks.js";
 import { createWidgetPassport, type WidgetPassport } from "./security/passport.js";
 import { contrastRatio, nearestAccessibleText } from "./security/contrast.js";
 import { HypeEngine, type HypeSettings } from "./hype/engine.js";
+import { SessionManager, type SessionActivity } from "./sessions/manager.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
@@ -99,10 +100,12 @@ store.settings.overlayHypeMeter ??= false;
 store.settings.includeChatterNames ??= false;
 store.settings.nonEnglishManualApproval ??= true;
 store.settings.autoClipsEnabled ??= false;
+store.settings.sessionAutoEndMinutes ??= 0;
+const sessions=new SessionManager(path.join(dataDir,"sessions"));await sessions.init();if(store.settings.includeChatterNames!==true)await sessions.setIncludeNames(false);
 const hypeEngine=new HypeEngine();let lastHypePublish=0;let pendingHypePublish:NodeJS.Timeout|undefined;let simulatedHypeUntil=0;let simulatedHypeEnergy=0;
 function hypeSettings():HypeSettings{return{sensitivity:(store.settings.hypeSensitivity==="low"||store.settings.hypeSensitivity==="high"?store.settings.hypeSensitivity:"normal"),manualBoost:Math.max(-50,Math.min(50,Number(store.settings.manualHypeBoost)||0)),muted:store.settings.hypeMuted===true,reactive:store.settings.hypeReactive===true,simulatedEnergy:Date.now()<simulatedHypeUntil?simulatedHypeEnergy:0};}
 function hypeSnapshot(){return hypeEngine.snapshot(hypeSettings());}
-function publishHype():void{const wait=Math.max(0,250-(Date.now()-lastHypePublish));if(wait){if(!pendingHypePublish)pendingHypePublish=setTimeout(()=>{pendingHypePublish=undefined;lastHypePublish=Date.now();publish({type:"hype",hype:hypeSnapshot()});},wait);return;}lastHypePublish=Date.now();publish({type:"hype",hype:hypeSnapshot()});}
+function publishHype():void{const wait=Math.max(0,250-(Date.now()-lastHypePublish));if(wait){if(!pendingHypePublish)pendingHypePublish=setTimeout(()=>{pendingHypePublish=undefined;lastHypePublish=Date.now();const hype=hypeSnapshot();publish({type:"hype",hype});void sessions.recordHype(hype.value);},wait);return;}lastHypePublish=Date.now();const hype=hypeSnapshot();publish({type:"hype",hype});void sessions.recordHype(hype.value);}
 
 async function persist(): Promise<void> {
   const tempPath = `${storePath}.${randomUUID()}.tmp`;
@@ -188,6 +191,14 @@ app.get("/api/state", async (_req, res) => {
   res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, themeContrast, hype:hypeSnapshot(), codexVerification: store.codexVerification });
 });
 app.get("/api/hype",(_req,res)=>res.json(hypeSnapshot()));
+app.get("/api/sessions",(_req,res)=>res.json({current:sessions.currentSession()||null,sessions:sessions.list(),settings:{autoEndIdleMinutes:store.settings.sessionAutoEndMinutes,includeChatterNames:store.settings.includeChatterNames}}));
+app.post("/api/sessions/start",async(_req,res)=>{const session=await sessions.start();publish({type:"session",action:"start",session});res.status(201).json(session);});
+app.post("/api/sessions/end",async(_req,res)=>{const session=await sessions.end();if(!session)return res.status(409).json({error:"There is no active session."});publish({type:"session",action:"end",session});res.json(session);});
+app.patch("/api/sessions/settings",async(req,res)=>{const idle=req.body?.autoEndIdleMinutes;const names=req.body?.includeChatterNames;if(idle!==undefined&&(!Number.isInteger(Number(idle))||Number(idle)<0||Number(idle)>1440))return res.status(400).json({error:"Auto-end idle time must be 0 to 1440 minutes; zero disables it."});if(names!==undefined&&typeof names!=="boolean")return res.status(400).json({error:"Include chatter names must be on or off."});if(idle!==undefined)store.settings.sessionAutoEndMinutes=Number(idle);if(names!==undefined){store.settings.includeChatterNames=names;if(!names)await sessions.setIncludeNames(false);}await persist();res.json({ok:true,settings:{autoEndIdleMinutes:store.settings.sessionAutoEndMinutes,includeChatterNames:store.settings.includeChatterNames}});});
+app.get("/api/sessions/:id/recap.json",(req,res)=>{const session=sessions.get(req.params.id);if(!session)return res.status(404).json({error:"Session not found."});res.json(session);});
+app.get("/api/sessions/:id/export.json",(req,res)=>{const session=sessions.get(req.params.id);if(!session)return res.status(404).json({error:"Session not found."});res.setHeader("Content-Disposition",`attachment; filename=streamforge-session-${session.id}.json`);res.json(session);});
+app.get("/api/sessions/:id",(req,res)=>{const session=sessions.get(req.params.id);if(!session)return res.status(404).json({error:"Session not found."});res.json(session);});
+app.delete("/api/sessions/:id",async(req,res)=>{if(!await sessions.delete(req.params.id))return res.status(404).json({error:"Session not found."});publish({type:"session",action:"delete",id:req.params.id});res.json({ok:true});});
 app.post("/api/hype/simulate",(req,res)=>{const energy=Number(req.body?.energy);if(!Number.isInteger(energy)||energy<0||energy>100)return res.status(400).json({error:"Simulated chat energy must be an integer from 0 to 100."});simulatedHypeEnergy=energy;simulatedHypeUntil=Date.now()+15_000;publishHype();res.json({ok:true,simulated:true,expiresAt:new Date(simulatedHypeUntil).toISOString(),hype:hypeSnapshot()});});
 app.patch("/api/hype/settings",async(req,res)=>{
   const sensitivity=req.body?.sensitivity;const manualBoost=req.body?.manualBoost;const muted=req.body?.muted;const reactive=req.body?.reactive;const overlayMeter=req.body?.overlayMeter;
@@ -341,6 +352,7 @@ const transitions: Record<BuildState, BuildState[]> = {
 function setState(request: Request, next: BuildState): void {
   if (!transitions[request.status].includes(next)) throw new Error(`invalid_transition:${request.status}:${next}`);
   request.status = next; request.updatedAt = new Date().toISOString();
+  if(next==="approved")void sessions.record("approvals");if(next==="rolled_back")void sessions.record("rollbacks");
   const index = store.requestHistory.findIndex((item) => item.id === request.id);
   if (index < 0) store.requestHistory.unshift({ ...request }); else store.requestHistory[index] = { ...request };
 }
@@ -350,11 +362,13 @@ function buildFeed(request: Request, stage: string, detail: string, checks?: unk
 async function createRequest(text: string, requester: string, source: string, kind: "build" | "remix" = "build", widgetId?: string): Promise<Request> {
   const request: Request = { id: randomUUID(), text, requester, source, status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [], kind, widgetId };
   store.requests.unshift(request); store.requestHistory.unshift({ ...request });
+  void sessions.record("requests");if(kind==="remix")void sessions.record("remixes");
   await persist(); publish({ type: "request", request: publicRequest(request) });
   buildFeed(request, "Received", "Request added to the queue");
   return request;
 }
 async function mockBuild(request: Request): Promise<void> {
+  const buildStartedAt=Date.now();
   const buildMode = String(store.settings.buildMode || "mock");
   if (buildMode === "codex") {
     request.failure = "Real Codex builds are disabled during this development run.";
@@ -400,7 +414,7 @@ async function mockBuild(request: Request): Promise<void> {
       store.widgets.push(metadata);
     }
     const promotedWidget=store.widgets.find((item)=>item.id===widgetId);if(promotedWidget){promotedWidget.passport=await widgetPassport(promotedWidget,source,result);const libraryEntry=store.library.find((item)=>item.widgetId===widgetId);if(libraryEntry)libraryEntry.passport=promotedWidget.passport;}
-    setState(request, "live"); buildFeed(request, "Live", "Widget passed checks and is ready on the overlay", result.checks);
+    setState(request, "live"); void sessions.recordBuild(buildStartedAt); buildFeed(request, "Live", "Widget passed checks and is ready on the overlay", result.checks);
     await persist(); publish({ type: "widgets", widgets: store.widgets });
   } catch {
     if (isRemix && widgetId && originalSource) {
@@ -446,6 +460,7 @@ async function undoWidget(widgetId: string): Promise<{ ok: boolean; reason?: str
   }
   widget.passport=await widgetPassport(widget,source,check);const libraryEntry=store.library.find((item)=>item.widgetId===widgetId);if(libraryEntry)libraryEntry.passport=widget.passport;await persist();
   publish({ type: "widgets", widgets: store.widgets });
+  void sessions.record("rollbacks");
   return { ok: true };
 }
 setInterval(() => {
@@ -470,6 +485,7 @@ app.post("/api/chat", async (req, res) => {
   const userId = typeof req.body?.userId === "string" ? req.body.userId.slice(0, 100) : "";
   const login = typeof req.body?.login === "string" ? req.body.login.slice(0, 40) : "";
   if (!message || !userId || req.body?.isBot === true || /(?:bot|nightbot|streamelements|moobot)$/iu.test(login)) return res.json({ ok: true, ignored: true });
+  const commandName=/^\s*([!/?][\p{L}\p{N}_-]+)/u.exec(message)?.[1];void sessions.recordChat(userId,commandName,login||"Viewer",store.settings.includeChatterNames===true);
   const anonymousPlayer=`Player ${createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex").slice(0,5)}`;
   const emoteCount=Number.isInteger(req.body?.emoteCount)&&req.body.emoteCount>=0?Math.min(200,req.body.emoteCount):undefined;hypeEngine.addChat(createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex"),message,Date.now(),emoteCount);publishHype();
   publish({ type: "event", event: { type: "chat", payload: { message: redactDisplay(message), user: anonymousPlayer, isMod:req.body?.isMod===true }, simulated: req.body?.simulated === true, at: new Date().toISOString() } });
@@ -502,6 +518,7 @@ app.post("/api/chat", async (req, res) => {
     const request = queued[position - 1];
     if (request && !request.voterIds?.includes(userId)) {
       request.voterIds = [...(request.voterIds || []), userId]; request.votes = (request.votes || 0) + 1;
+      void sessions.record("votes");
       const history = store.requestHistory.find((item) => item.id === request.id); if (history) Object.assign(history, request);
       await persist(); publish({ type: "queue", requests: queued.map(publicRequest) });
       const threshold = Number(store.settings.autoBuildVotes || 0);
@@ -577,8 +594,8 @@ app.post("/api/simulate/:event", (req, res) => {
   const allowed = new Set(["chat", "follow", "sub", "raid", "redeem"]);
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
   const eventType = req.params.event;
-  if(eventType==="chat"){const commands=Array.isArray(req.body?.commands)?req.body.commands.slice(0,10).map(String):[String(req.body?.message||"")];for(const message of commands)hypeEngine.addChat("simulated-viewer",message);publishHype();}
-  else{hypeEngine.addEvent(eventType,Date.now(),Number(req.body?.viewers)||0);publishHype();}
+  if(eventType==="chat"){const commands=Array.isArray(req.body?.commands)?req.body.commands.slice(0,10).map(String):[String(req.body?.message||"")];for(const message of commands){hypeEngine.addChat("simulated-viewer",message);const commandName=/^\s*([!/?][\p{L}\p{N}_-]+)/u.exec(message)?.[1];void sessions.recordChat("simulated-viewer",commandName,"Simulated viewer",store.settings.includeChatterNames===true);}}
+  else{hypeEngine.addEvent(eventType,Date.now(),Number(req.body?.viewers)||0);const activity:Record<string,SessionActivity>={follow:"follows",sub:"subs",raid:"raids",redeem:"redemptions"};void sessions.record(activity[eventType]);publishHype();}
   if (eventType === "chat" && Array.isArray(req.body?.commands)) {
     for (const message of req.body.commands.slice(0,10)) publish({type:"event",event:{type:"chat",payload:{message:String(message).slice(0,100),user:"Player abc12",isMod:true},simulated:true,at:new Date().toISOString()}});
   } else {
@@ -626,6 +643,7 @@ function publish(payload: unknown): void {
   for (const client of clients) if (client.readyState === WebSocket.OPEN) client.send(message);
 }
 setInterval(()=>publishHype(),1000).unref();
+setInterval(()=>{void sessions.autoEnd(Number(store.settings.sessionAutoEndMinutes)||0).then((ended)=>{if(ended)publish({type:"session",action:"auto-end"});}).catch(()=>{});},60_000).unref();
 
 http.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EADDRINUSE") {
