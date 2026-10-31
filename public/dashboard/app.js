@@ -19,6 +19,7 @@ function paintHype(hype){if(!hype)return;state.hype=hype;hypeHistory.push(hype.v
 async function refresh() { try { state = await (await fetch("/api/state")).json(); state.draftPreview=latestDraftPreview; state.buildFeed=latestBuildFeed; } catch { /* page reports local API errors */ } }
 async function render() {
   await refresh();
+  await status();
   const key = location.hash.slice(1) || "overview";
   const page = pages[key] || pages.overview;
   links.forEach((link) => link.setAttribute("aria-current", link.dataset.page === key ? "page" : "false"));
@@ -40,10 +41,31 @@ async function status() {
   try {
     const health = await (await fetch("/api/health")).json();
     const box = document.querySelector("#connections");
-    const item = (label, ok, hint) => `<span class="status" title="${hint}"><i class="dot ${ok ? "ok" : ""}"></i>${label}</span>`;
-    box.innerHTML = item("Twitch chat", false, "Set up Twitch credentials") + item("EventSub", false, "Authorize Twitch") + item("Codex", health.codex.state === "verified", health.codex.state === "verified" ? `Verified ${health.codex.time}` : "Sign in to Codex and verify");
+    const escape = value => String(value).replace(/[&<>"']/gu, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char]));
+    const item = (label, state, hint) => `<span class="status" title="${escape(hint)}" aria-label="${escape(`${label}: ${state}. ${hint}`)}"><i class="dot ${state === "connected" ? "ok" : state === "error" ? "error" : ""}"></i>${label}</span>`;
+    const twitch=health.twitch, token=twitch.token;
+    let chatState="needs setup",chatHint;
+    if(token.expired){chatState="error";chatHint="Twitch token expired. Click Connect Twitch and authorize again.";}
+    else if(twitch.chat==="error"||token.refreshError){chatState="error";chatHint=twitch.chatError||"Twitch token refresh failed. Reconnect Twitch.";}
+    else if(twitch.chat==="connected"){chatState="connected";chatHint="Twitch IRC chat is connected.";}
+    else if(!twitch.configured){chatHint="Missing Twitch Client ID, Client Secret, or Channel in .env. Add them and restart StreamForge.";}
+    else if(!twitch.enabled){chatHint="TWITCH_LIVE_ENABLED is not true. Set it in .env and restart StreamForge.";}
+    else if(!token.connected){chatHint="Twitch is not authorized. Click Connect Twitch and complete authorization.";}
+    else {chatHint="Twitch chat is connecting. Check the channel name and granted chat:read scope in Settings.";}
+    let eventsState="needs setup",eventsHint;
+    if(token.expired){eventsState="error";eventsHint="Twitch token expired. Click Connect Twitch and authorize again.";}
+    else if(twitch.eventSub==="error"||token.refreshError){eventsState="error";eventsHint=twitch.eventSubError||"Twitch token refresh failed. Reconnect Twitch.";}
+    else if(twitch.eventSub==="connected"){eventsState="connected";eventsHint="Twitch EventSub is connected.";}
+    else if(!twitch.configured){eventsHint="Missing Twitch Client ID, Client Secret, or Channel in .env. Add them and restart StreamForge.";}
+    else if(!twitch.enabled){eventsHint="TWITCH_LIVE_ENABLED is not true. Set it in .env and restart StreamForge.";}
+    else if(!token.connected){eventsHint="Twitch is not authorized. Click Connect Twitch and complete authorization.";}
+    else {eventsHint="EventSub is connecting. Check required scopes in Settings.";}
+    const codexState=health.codex.state==="verified"?"connected":health.codex.state==="error"?"error":"needs setup";
+    const codexHint=codexState==="connected"?`Verified earlier at ${health.codex.time}.`:codexState==="error"?`Verification failed (${health.codex.error}). Sign in to Codex, then click Verify Codex in Settings.`:"Missing Codex login or verification. Sign in to Codex, then click Verify Codex in Settings.";
+    box.innerHTML = item("Twitch chat", chatState, chatHint) + item("EventSub", eventsState, eventsHint) + item("Codex", codexState, codexHint);
   } catch { /* visible page remains usable offline */ }
 }
 status();
+setInterval(status, 10_000);
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message;if(message.type==="buildFeed"){latestBuildFeed.unshift(message);latestBuildFeed=latestBuildFeed.slice(0,40);render();return;}if(message.type==="hype"){paintHype(message.hype);return;}if(message.type==="hypeSettings")return; } catch { /* ignore malformed transport data */ } render(); });

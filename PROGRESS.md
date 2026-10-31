@@ -135,3 +135,10 @@
 - Done: Overview and Settings expose an explicit Verify Codex action. Clicking it runs one tiny SDK task in a temporary directory with network disabled, persists only time, success and a safe error code in app state, then removes the directory. Stored success is shown as “Verified earlier”; auth failures replace it with an unverified result.
 - Verified using the injected fake SDK (`npm run test:codex-verify`), TypeScript, JS syntax, `git diff --check`, and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes plus overlay, zero findings). No real Codex task was run.
 - Next: R8 honest shared status strip and setup checklist on every page.
+
+### Real integration step 8: shared status and setup checklist
+
+- Done: the persistent top bar now derives Twitch chat, EventSub and Codex dots from health state, with green connected, amber setup-needed and red error states. Hover/accessibility descriptions give the missing item and fix; token expiry and refresh failure are red and explicit. The health API exposes only a Twitch configuration boolean, never credential values.
+- Overview checklist now reflects credential presence, the live switch, Twitch authorization/expiry, Codex verification time, the exact OAuth redirect URL and OBS source URL. Connect Twitch remains available in the top bar on every page.
+- Verified with TypeScript, browser syntax/whitespace checks, and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes and overlay, zero findings). No live connection was made.
+- Next: R9 implement Twitch stream status and safe opt-in Auto-Clips using documented Helix APIs and fake endpoints.

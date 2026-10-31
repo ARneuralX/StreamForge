@@ -287,7 +287,23 @@ async function dispatchStreamEvent(eventType: "follow" | "sub" | "raid" | "redee
   await runBuild(request);
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: liveTwitchEnabled(process.env), chat: chatState, chatError: chatError || null, eventSub: eventSubState, eventSubError: eventSubError || null, token: twitchTokenStore.status() }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
+app.get("/api/health", (_req, res) => {
+  const token = twitchTokenStore.status();
+  const twitchConfigured = Boolean(process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET && process.env.TWITCH_CHANNEL);
+  const codex = store.codexVerification?.ok
+    ? { state: "verified", time: store.codexVerification.time }
+    : store.codexVerification?.error
+      ? { state: "error", error: store.codexVerification.error }
+      : { state: "needs_setup" };
+  res.json({
+    ok: true,
+    buildMode: store.settings.buildMode,
+    twitch: { enabled: liveTwitchEnabled(process.env), configured: twitchConfigured, chat: chatState, chatError: chatError || null, eventSub: eventSubState, eventSubError: eventSubError || null, token },
+    codex,
+    queueDepth: store.requests.filter((item) => item.status === "queued").length,
+    lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null,
+  });
+});
 app.post("/api/twitch/disconnect", async (_req, res) => {
   twitchIrc.stop();
   twitchEventSub.stop();
