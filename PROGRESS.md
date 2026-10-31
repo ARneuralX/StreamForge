@@ -57,3 +57,9 @@
 - Stage 7 implementation done: added a repeatable JSON Demo Director sequence with chat-energy ramp, guaranteed natural 20, follow/sub/raid, theme and scene switches, and a simulated replay feed. Dashboard controls expose Start, Stop/restore and 0.5×–4× speed; overlay and replay activity carry SIMULATED markers, and recaps persist the marker. Stop restores widget enabled states, theme, Safe Mode, hype sensitivity and scene. Updated README, Widget API and Codex history. `npm run test:demo`, `npm run test:widgets`, TypeScript and syntax/whitespace checks pass.
 - Known limitation: Stage 7 final end-to-end browser smoke is deferred to the Phase 4B QA harness/regression close so it runs once against the repaired UI. Replay activity is a simulated build-feed sequence; it does not start a real build runner.
 - Next: Phase 4B defect reproduction, UI redesign and automated QA.
+
+## Phase 4B
+
+- Stage 1 QA harness done: added `npm run qa:ui` using installed headless Chrome/CDP and an isolated temporary mock server. It visits all eight dashboard pages at 1024×768, 1280×720, 1440×900 and 1920×1080, then the overlay at 1920×1080; saves full-page screenshots under ignored `qa-artifacts/`; and checks browser diagnostics, failed requests, overflow, clipping, target size, card overlap and contrast. No new browser dependency was needed. Baseline shows no browser errors, failed requests, horizontal overflow or detected card overlaps. Added [docs/QA_REPORT.md](docs/QA_REPORT.md). One false-positive audit iteration exposed small checkbox labels; their hit areas now meet 32 px.
+- Audit note pending: continue reproducing the reported Overview organization, theme visibility, preview backgrounds and Library mount/Add behavior before recording final root causes and making those fixes.
+- Next: finish defect reproduction, record the full audit note, then Stage 2 Overview redesign.
