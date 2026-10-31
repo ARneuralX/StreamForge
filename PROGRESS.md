@@ -129,3 +129,9 @@
 - Added private atomic build replay records. Replay mode rechecks the recorded widget before enabling it and labels each feed update as DEMO MODE; it does not start a Codex task.
 - Verified with injected fake SDK and replay fixtures only (`npm run test:codex-runner`, `npm run test:build-replay`, `npm run test:widgets`), `npx tsc --noEmit`, JS syntax and whitespace checks, and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes and overlay, zero findings). No real Codex build was run.
 - Next: R7 add an explicit temporary-directory Codex verification flow with fake-only checks.
+
+### Real integration step 7: Verify Codex
+
+- Done: Overview and Settings expose an explicit Verify Codex action. Clicking it runs one tiny SDK task in a temporary directory with network disabled, persists only time, success and a safe error code in app state, then removes the directory. Stored success is shown as “Verified earlier”; auth failures replace it with an unverified result.
+- Verified using the injected fake SDK (`npm run test:codex-verify`), TypeScript, JS syntax, `git diff --check`, and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes plus overlay, zero findings). No real Codex task was run.
+- Next: R8 honest shared status strip and setup checklist on every page.

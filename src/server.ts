@@ -1,8 +1,7 @@
 import express from "express";
 import { createServer } from "node:http";
-import { readFile, mkdir, writeFile, rename, chmod, mkdtemp, rm, copyFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile, rename, chmod, rm, copyFile } from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID, createHash } from "node:crypto";
@@ -21,6 +20,7 @@ import { TwitchIrcClient } from "./twitch/irc-client.js";
 import { TwitchEventSubClient } from "./twitch/eventsub-client.js";
 import { codexFailureMessage, parseWidgetMeta as parseCodexWidgetMeta, runCodexWidgetBuild, type CodexRunnerError } from "./codex/runner.js";
 import { latestSuccessfulBuildRecording, writeBuildRecording, type BuildRecording, type RecordedBuildEvent } from "./codex/replay.js";
+import { verifyCodex } from "./codex/verify.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
@@ -37,7 +37,6 @@ let eventSubState: "connected" | "needs_setup" | "error" = "needs_setup";
 let chatError: string | undefined;
 let eventSubError: string | undefined;
 function recordError(code: ErrorCode): string { lastError = { code, at: new Date().toISOString() }; return errorMessages[code]; }
-function classifyCodexFailure(error:unknown):ErrorCode|undefined{const text=String((error as Error)?.message||error||"").toLowerCase();if(/usage limit|rate.?limit|quota|\b429\b/u.test(text))return "CODEX_LIMIT_REACHED";if(/not logged in|unauthori[sz]ed|authentication|sign.?in|\b401\b/u.test(text))return "CODEX_NOT_LOGGED_IN";if(/timed? ?out|timeout/u.test(text))return "CODEX_TIMEOUT";return undefined;}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicRoot = path.join(root, "public");
@@ -470,22 +469,7 @@ app.post("/api/library/:id/add", async (req, res) => {
   res.json({ok:true,widget});
 });
 app.post("/api/codex/verify", async (_req, res) => {
-  const workingDirectory = await mkdtemp(path.join(os.tmpdir(), "streamforge-verify-"));
-  const outputPath = path.join(workingDirectory, "verification.txt");
-  try {
-    const { Codex } = await import("@openai/codex-sdk");
-    const thread = new Codex().startThread({ workingDirectory, sandboxMode: "workspace-write", approvalPolicy: "never", skipGitRepoCheck: true, networkAccessEnabled: false, webSearchMode: "disabled" });
-    const { events } = await thread.runStreamed(`Create ${outputPath} with the text "StreamForge Codex verification". Do not change any other file.`);
-    for await (const _event of events) { /* consume the real verification stream */ }
-    const contents = await readFile(outputPath, "utf8");
-    if (!contents.includes("StreamForge Codex verification")) throw Object.assign(new Error("verification_output_missing"), { code: "verification_output_missing" });
-    store.codexVerification = { time: new Date().toISOString(), ok: true };
-  } catch (error) {
-    const code = classifyCodexFailure(error)||String((error as NodeJS.ErrnoException).code || "CODEX_BAD_OUTPUT").slice(0, 100);
-    store.codexVerification = { time: new Date().toISOString(), ok: false, error: code };
-  } finally {
-    await rm(workingDirectory, { recursive: true, force: true });
-  }
+  store.codexVerification = await verifyCodex();
   await persist();
   res.json(store.codexVerification);
 });
