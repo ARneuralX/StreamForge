@@ -59,3 +59,5 @@ This development run uses the deterministic mock runner and simulated events. It
 Run `npx tsc --noEmit`, `npm run test:widgets`, and `npm run test:templates`. To capture a dashboard or overlay image, start StreamForge, open the target page in Chrome, set the browser viewport to the desired size, then use Chrome DevTools **Capture screenshot** or macOS screenshot controls. Keep screenshots outside the repository unless they are intentional product assets.
 
 The Codex SDK Step 0 gate was run by the user. The verification task and real build button were not exercised during development.
+
+The Hype meter uses rolling aggregate chat and event activity, with sensitivity, manual boost, mute and reactive-widget controls. It exposes no chatter names; simulated activity never contacts Twitch.

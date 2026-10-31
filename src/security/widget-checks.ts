@@ -35,7 +35,7 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
       root: makeElement(),
       safeMode: "off",
       motionScale: 1,
-      hype: { value: 0, level: "calm", trend: "steady" },
+      hype: Object.freeze({ score: 0, level: "calm", window10:{messages:0,uniqueChatters:0}, window60:{messages:0,uniqueChatters:0,emoteDensity:0,commandRate:0}, baselinePerMinute:2, components:{chat:0,community:0,emotes:0,commands:0,events:0,manual:0}, muted:false, reactive:false }),
       theme: { accent: "#a9f5dc", accent2: "#aa8aff", background: "#17151f", text: "#f6f2ff", glow: "#a9f5dc", radius: 16, fontStack: "system-ui", animationSpeed: 1 },
       on(name: string, handler: Function) { listeners.set(name, [...(listeners.get(name) || []), handler]); },
       sound: { play() {} }, timers: { setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {} }, storage: { get() { return null; }, set() {} },

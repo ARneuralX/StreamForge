@@ -12,6 +12,7 @@ import { checkWidgetSource } from "./security/widget-checks.js";
 import { validateRequestText } from "./security/request-checks.js";
 import { createWidgetPassport, type WidgetPassport } from "./security/passport.js";
 import { contrastRatio, nearestAccessibleText } from "./security/contrast.js";
+import { HypeEngine, type HypeSettings } from "./hype/engine.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
@@ -98,6 +99,10 @@ store.settings.overlayHypeMeter ??= false;
 store.settings.includeChatterNames ??= false;
 store.settings.nonEnglishManualApproval ??= true;
 store.settings.autoClipsEnabled ??= false;
+const hypeEngine=new HypeEngine();let lastHypePublish=0;let pendingHypePublish:NodeJS.Timeout|undefined;
+function hypeSettings():HypeSettings{return{sensitivity:(store.settings.hypeSensitivity==="low"||store.settings.hypeSensitivity==="high"?store.settings.hypeSensitivity:"normal"),manualBoost:Math.max(-50,Math.min(50,Number(store.settings.manualHypeBoost)||0)),muted:store.settings.hypeMuted===true,reactive:store.settings.hypeReactive===true};}
+function hypeSnapshot(){return hypeEngine.snapshot(hypeSettings());}
+function publishHype():void{const wait=Math.max(0,250-(Date.now()-lastHypePublish));if(wait){if(!pendingHypePublish)pendingHypePublish=setTimeout(()=>{pendingHypePublish=undefined;lastHypePublish=Date.now();publish({type:"hype",hype:hypeSnapshot()});},wait);return;}lastHypePublish=Date.now();publish({type:"hype",hype:hypeSnapshot()});}
 
 async function persist(): Promise<void> {
   const tempPath = `${storePath}.${randomUUID()}.tmp`;
@@ -180,7 +185,16 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.sett
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
   const tokens=store.settings.themeTokens as ThemeTokens;const themeContrast=validTheme(tokens)?{ratio:Number(contrastRatio(tokens.text,tokens.background).toFixed(2)),passes:contrastRatio(tokens.text,tokens.background)>=4.5}:null;
-  res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, themeContrast, codexVerification: store.codexVerification });
+  res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, themeContrast, hype:hypeSnapshot(), codexVerification: store.codexVerification });
+});
+app.get("/api/hype",(_req,res)=>res.json(hypeSnapshot()));
+app.patch("/api/hype/settings",async(req,res)=>{
+  const sensitivity=req.body?.sensitivity;const manualBoost=req.body?.manualBoost;const muted=req.body?.muted;const reactive=req.body?.reactive;const overlayMeter=req.body?.overlayMeter;
+  if(sensitivity!==undefined&&!["low","normal","high"].includes(sensitivity))return res.status(400).json({error:"Choose low, normal or high sensitivity."});
+  if(manualBoost!==undefined&&(!Number.isFinite(Number(manualBoost))||Number(manualBoost)<-50||Number(manualBoost)>50))return res.status(400).json({error:"Manual boost must be between -50 and 50."});
+  for(const value of [muted,reactive,overlayMeter])if(value!==undefined&&typeof value!=="boolean")return res.status(400).json({error:"Hype toggles must be on or off."});
+  if(sensitivity!==undefined)store.settings.hypeSensitivity=sensitivity;if(manualBoost!==undefined)store.settings.manualHypeBoost=Math.round(Number(manualBoost));if(muted!==undefined)store.settings.hypeMuted=muted;if(reactive!==undefined)store.settings.hypeReactive=reactive;if(overlayMeter!==undefined)store.settings.overlayHypeMeter=overlayMeter;
+  await persist();const hype=hypeSnapshot();publish({type:"hypeSettings",settings:{sensitivity:store.settings.hypeSensitivity,manualBoost:store.settings.manualHypeBoost,muted:store.settings.hypeMuted,reactive:store.settings.hypeReactive,overlayMeter:store.settings.overlayHypeMeter}});publishHype();res.json({ok:true,settings:{sensitivity:store.settings.hypeSensitivity,manualBoost:store.settings.manualHypeBoost,muted:store.settings.hypeMuted,reactive:store.settings.hypeReactive,overlayMeter:store.settings.overlayHypeMeter},hype});
 });
 app.get("/api/widgets/:id/storage",(req,res)=>{
   if(!store.widgets.some((widget)=>widget.id===req.params.id))return res.status(404).json({error:"Widget not found."});
@@ -456,6 +470,7 @@ app.post("/api/chat", async (req, res) => {
   const login = typeof req.body?.login === "string" ? req.body.login.slice(0, 40) : "";
   if (!message || !userId || req.body?.isBot === true || /(?:bot|nightbot|streamelements|moobot)$/iu.test(login)) return res.json({ ok: true, ignored: true });
   const anonymousPlayer=`Player ${createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex").slice(0,5)}`;
+  hypeEngine.addChat(createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex"),message);publishHype();
   publish({ type: "event", event: { type: "chat", payload: { message: redactDisplay(message), user: anonymousPlayer, isMod:req.body?.isMod===true }, simulated: req.body?.simulated === true, at: new Date().toISOString() } });
   const buildMatch = /^!build\s+(.+)$/iu.exec(message);
   if (buildMatch) {
@@ -561,6 +576,8 @@ app.post("/api/simulate/:event", (req, res) => {
   const allowed = new Set(["chat", "follow", "sub", "raid", "redeem"]);
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
   const eventType = req.params.event;
+  if(eventType==="chat"){const commands=Array.isArray(req.body?.commands)?req.body.commands.slice(0,10).map(String):[String(req.body?.message||"")];for(const message of commands)hypeEngine.addChat("simulated-viewer",message);publishHype();}
+  else{hypeEngine.addEvent(eventType);publishHype();}
   if (eventType === "chat" && Array.isArray(req.body?.commands)) {
     for (const message of req.body.commands.slice(0,10)) publish({type:"event",event:{type:"chat",payload:{message:String(message).slice(0,100),user:"Player abc12",isMod:true},simulated:true,at:new Date().toISOString()}});
   } else {
@@ -607,6 +624,7 @@ function publish(payload: unknown): void {
   const message = JSON.stringify(payload);
   for (const client of clients) if (client.readyState === WebSocket.OPEN) client.send(message);
 }
+setInterval(()=>publishHype(),1000).unref();
 
 http.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EADDRINUSE") {
