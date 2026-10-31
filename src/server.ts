@@ -16,7 +16,7 @@ import { HypeEngine, type HypeSettings } from "./hype/engine.js";
 import { SessionManager, type SessionActivity } from "./sessions/manager.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
-type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
+type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
 type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean; passport?: WidgetPassport };
 type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string; passport?: WidgetPassport };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; widgetStorage?: Record<string, Record<string, unknown>>; codexVerification?: { time: string; ok: boolean; error?: string } };
@@ -395,8 +395,8 @@ function setState(request: Request, next: BuildState): void {
 function buildFeed(request: Request, stage: string, detail: string, checks?: unknown): void {
   publish({ type: "buildFeed", request: publicRequest(request), stage, detail, checks, at: new Date().toISOString() });
 }
-async function createRequest(text: string, requester: string, source: string, kind: "build" | "remix" = "build", widgetId?: string): Promise<Request> {
-  const request: Request = { id: randomUUID(), text, requester, source, status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [], kind, widgetId };
+async function createRequest(text: string, requester: string, source: string, kind: "build" | "remix" = "build", widgetId?: string, language?:{script:string;english:boolean;manualReview:boolean}): Promise<Request> {
+  const request: Request = { id: randomUUID(), text, requester, source, status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [], kind, widgetId, script:language?.script||"Latin", manualReview:language?.manualReview===true&&store.settings.nonEnglishManualApproval===true, languageInstruction:language&&!language.english?`Keep visible widget text in the requester's ${language.script} language when it fits. Keep code identifiers and comments in English.`:undefined };
   store.requests.unshift(request); store.requestHistory.unshift({ ...request });
   void sessions.record("requests");if(kind==="remix")void sessions.record("remixes");
   await persist(); publish({ type: "request", request: publicRequest(request) });
@@ -503,21 +503,21 @@ setInterval(() => {
   if (store.settings.approval !== "auto-votes") return;
   const seconds = Number(store.settings.autoBuildSeconds || 0);
   if (seconds <= 0) return;
-  const next = store.requests.filter((item) => item.status === "queued").sort((a,b)=>(b.votes||0)-(a.votes||0)||a.createdAt.localeCompare(b.createdAt))[0];
+  const next = store.requests.filter((item) => item.status === "queued"&&!item.manualReview).sort((a,b)=>(b.votes||0)-(a.votes||0)||a.createdAt.localeCompare(b.createdAt))[0];
   if (!next || Date.now() - Date.parse(next.createdAt) < seconds * 1000) return;
   setState(next, "approved");
   publish({type:"queue",requests:store.requests.filter((item)=>item.status==="queued").map(publicRequest)});
   void persist().then(() => runBuild(next));
 }, 1000);
 app.post("/api/requests", async (req, res) => {
-  const text = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 300) : "";
-  const validation=validateRequestText(text);if(!validation.ok)return res.status(400).json({error:validation.reason});
+  const candidate = typeof req.body?.text === "string" ? req.body.text : "";
+  const validation=validateRequestText(candidate);if(!validation.ok)return res.status(400).json({error:validation.reason});const text=validation.language!.normalized;
   if (store.requests.filter((item) => item.status === "queued").length >= 100) return res.status(429).json({ error: recordError("QUEUE_FULL") });
   const request = await createRequest(text, "Dashboard", "dashboard");
   res.status(201).json(publicRequest(request));
 });
 app.post("/api/chat", async (req, res) => {
-  const message = typeof req.body?.message === "string" ? req.body.message.trim().slice(0, 500) : "";
+  const message = typeof req.body?.message === "string" ? req.body.message.normalize("NFKC").replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/gu,"").replace(/[\u0000-\u001f\u007f-\u009f\u00ad]/gu," ").replace(/\s+/gu," ").trim().slice(0, 500) : "";
   const userId = typeof req.body?.userId === "string" ? req.body.userId.slice(0, 100) : "";
   const login = typeof req.body?.login === "string" ? req.body.login.slice(0, 40) : "";
   if (!message || !userId || req.body?.isBot === true || /(?:bot|nightbot|streamelements|moobot)$/iu.test(login)) return res.json({ ok: true, ignored: true });
@@ -529,10 +529,10 @@ app.post("/api/chat", async (req, res) => {
   if (buildMatch) {
     const lastBuildAt = recentBuilds.get(userId) || 0;
     if (Date.now() - lastBuildAt < 30_000) return res.status(429).json({ ok: false, reason: "Please wait before submitting another request." });
-    const text = buildMatch[1].trim().slice(0, 300);
-    if (validateRequestText(text).ok) {
+    const validation=validateRequestText(buildMatch[1]);const requestText=validation.language?.normalized||"";
+    if (validation.ok) {
       recentBuilds.set(userId, Date.now());
-      await createRequest(text, "Chat viewer", "chat");
+      await createRequest(requestText, "Chat viewer", "chat","build",undefined,{...validation.language!,manualReview:validation.language!.manualReview&&req.body?.isMod!==true});
     }
   }
   const remixCommand = /^!remix\s+(.+)$/iu.exec(message);
@@ -542,10 +542,10 @@ app.post("/api/chat", async (req, res) => {
     const body = remixCommand[1];
     const widget = [...store.widgets].sort((a,b)=>b.title.length-a.title.length).find((item)=>body.toLocaleLowerCase().startsWith(`${item.title.toLocaleLowerCase()} `) || body.toLocaleLowerCase().startsWith(`${item.id.toLocaleLowerCase()} `));
     if (!widget) return res.status(400).json({ ok: false, reason: "Name a widget from the current scene, followed by the requested change." });
-    const change = body.slice(body.toLocaleLowerCase().startsWith(`${widget.id.toLocaleLowerCase()} `) ? widget.id.length : widget.title.length).trim().slice(0,300);
-    if (!validateRequestText(change).ok) return res.status(400).json({ok:false,reason:"Enter a safe change of up to 300 characters and avoid blocked content."});
+    const validation=validateRequestText(body.slice(body.toLocaleLowerCase().startsWith(`${widget.id.toLocaleLowerCase()} `) ? widget.id.length : widget.title.length));
+    if (!validation.ok) return res.status(400).json({ok:false,reason:"Enter a safe change of up to 300 characters and avoid blocked content."});const change=validation.language!.normalized;
     recentBuilds.set(userId, Date.now());
-    await createRequest(change, "Chat viewer", "chat", "remix", widget.id);
+    await createRequest(change, "Chat viewer", "chat", "remix", widget.id,{...validation.language!,manualReview:validation.language!.manualReview&&req.body?.isMod!==true});
   }
   const voteMatch = /^(?:!vote\s+(\d+)|vote\s+(\d+)|\+1)$/iu.exec(message);
   if (voteMatch) {
@@ -558,7 +558,7 @@ app.post("/api/chat", async (req, res) => {
       const history = store.requestHistory.find((item) => item.id === request.id); if (history) Object.assign(history, request);
       await persist(); publish({ type: "queue", requests: queued.map(publicRequest) });
       const threshold = Number(store.settings.autoBuildVotes || 0);
-      if (threshold > 0 && request.votes >= threshold && store.settings.approval === "auto-votes") { setState(request, "approved"); await persist(); publish({type:"queue",requests:queued.map(publicRequest)}); await runBuild(request); }
+      if (threshold > 0 && request.votes >= threshold && store.settings.approval === "auto-votes"&&!request.manualReview) { setState(request, "approved"); await persist(); publish({type:"queue",requests:queued.map(publicRequest)}); await runBuild(request); }
     }
   }
   const undoMatch = /^!?undo\s+([a-z0-9-]{1,80})$/iu.exec(message);
@@ -594,11 +594,11 @@ app.post("/api/widgets/:id/undo", async (req, res) => {
 });
 app.post("/api/widgets/:id/remix", async (req, res) => {
   const widget = resolveWidgetName(req.params.id);
-  const change = typeof req.body?.change === "string" ? req.body.change.trim().slice(0,300) : "";
+  const change = typeof req.body?.change === "string" ? req.body.change : "";
   if (!widget) return res.status(404).json({error:"Widget not found."});
   if (!change) return res.status(400).json({error:"Describe the change to request."});
-  if (!validateRequestText(change).ok) return res.status(400).json({error:"That change needs manual moderator review."});
-  const request=await createRequest(change,"Dashboard","dashboard","remix",widget.id);
+  const validation=validateRequestText(change);if (!validation.ok) return res.status(400).json({error:"That change needs manual moderator review."});
+  const request=await createRequest(validation.language!.normalized,"Dashboard","dashboard","remix",widget.id,validation.language);
   res.status(201).json(publicRequest(request));
 });
 app.patch("/api/settings", async (req, res) => {
@@ -608,15 +608,18 @@ app.patch("/api/settings", async (req, res) => {
   const seconds = req.body?.autoBuildSeconds === undefined ? undefined : Number(req.body.autoBuildSeconds);
   const buildTimeoutSeconds = req.body?.buildTimeoutSeconds === undefined ? undefined : Number(req.body.buildTimeoutSeconds);
   const retryFailedBuildOnce = req.body?.retryFailedBuildOnce === undefined ? undefined : req.body.retryFailedBuildOnce;
+  const nonEnglishManualApproval=req.body?.nonEnglishManualApproval===undefined?undefined:req.body.nonEnglishManualApproval;
   if (votes !== undefined && (!Number.isInteger(votes) || votes < 1 || votes > 1000)) return res.status(400).json({ error: "Vote threshold must be from 1 to 1000." });
   if (seconds !== undefined && (!Number.isInteger(seconds) || seconds < 0 || seconds > 86400)) return res.status(400).json({ error: "Build timer must be from 0 to 86400 seconds." });
   if (buildTimeoutSeconds !== undefined && (!Number.isInteger(buildTimeoutSeconds) || buildTimeoutSeconds < 15 || buildTimeoutSeconds > 600)) return res.status(400).json({ error: "Build timeout must be from 15 to 600 seconds." });
   if (retryFailedBuildOnce !== undefined && typeof retryFailedBuildOnce !== "boolean") return res.status(400).json({ error: "Retry setting must be on or off." });
+  if(nonEnglishManualApproval!==undefined&&typeof nonEnglishManualApproval!=="boolean")return res.status(400).json({error:"Non-English manual approval setting must be on or off."});
   if (approval !== undefined) store.settings.approval = approval;
   if (votes !== undefined) store.settings.autoBuildVotes = votes;
   if (seconds !== undefined) store.settings.autoBuildSeconds = seconds;
   if (buildTimeoutSeconds !== undefined) store.settings.buildTimeoutSeconds = buildTimeoutSeconds;
   if (retryFailedBuildOnce !== undefined) store.settings.retryFailedBuildOnce = retryFailedBuildOnce;
+  if(nonEnglishManualApproval!==undefined)store.settings.nonEnglishManualApproval=nonEnglishManualApproval;
   await persist(); res.json(store.settings);
 });
 app.post("/api/widgets/:id/runtime-error", async (req, res) => {
@@ -641,8 +644,8 @@ app.post("/api/simulate/:event", (req, res) => {
     publish({ type: "event", event });
   }
   if (eventType === "redeem" && store.settings.approval === "auto-points" && req.body?.reward === "Build a widget") {
-    const text = typeof req.body?.user_input === "string" ? req.body.user_input.trim().slice(0, 300) : "Make a channel point widget";
-    void createRequest(text || "Make a channel point widget", "Channel point redeemer", "points").then(async (request) => { setState(request, "approved"); await persist(); await runBuild(request); });
+    const candidate = typeof req.body?.user_input === "string" ? req.body.user_input : "Make a channel point widget";const validation=validateRequestText(candidate);
+    if(validation.ok){void createRequest(validation.language!.normalized,"Channel point redeemer","points","build",undefined,validation.language).then(async(request)=>{if(request.manualReview)return;setState(request,"approved");await persist();await runBuild(request);});}
   }
   res.json({ ok: true, simulated: true });
 });
