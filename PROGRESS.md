@@ -142,3 +142,10 @@
 - Overview checklist now reflects credential presence, the live switch, Twitch authorization/expiry, Codex verification time, the exact OAuth redirect URL and OBS source URL. Connect Twitch remains available in the top bar on every page.
 - Verified with TypeScript, browser syntax/whitespace checks, and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes and overlay, zero findings). No live connection was made.
 - Next: R9 implement Twitch stream status and safe opt-in Auto-Clips using documented Helix APIs and fake endpoints.
+
+### Real integration step 9: stream status and Auto-Clips
+
+- Done: added fakeable `GET /helix/streams` and `POST /helix/clips` calls using the verified `user_id`, `broadcaster_id`, and `clips:edit` requirements. Auto-Clips is OFF by default; enabling requires the live switch and explicit clip scope. Status calls are made only while enabled. Manual, allow-listed widget moments, moderator `!clip`, and sustained hype peaks can request a clip. Mock activity cannot trigger automatic clips.
+- A persisted global cooldown, per-session success cap, one in-flight request, live-channel check and no-retry rate-limit handling guard all triggers. The UI shows authorization, channel status, cap and Twitch review link; error output stays generic and safe.
+- Verified with fake endpoint tests (`npm run test:twitch-clips`), existing clips API test, OAuth scope tests, session tests, TypeScript, JS syntax, whitespace and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes plus overlay, zero findings). No Twitch calls were made.
+- Next: R10 confirm launch/restart behavior and ensure all test entry points stay in mock mode.

@@ -32,6 +32,7 @@ flowchart LR
 | `src/twitch/token-store.ts` | Atomic mode-0600 token persistence, refresh, status and disconnect. |
 | `src/twitch/irc-client.ts` | Twitch IRC WebSocket handshake, parsing and quiet reconnect. |
 | `src/twitch/eventsub-client.ts` | EventSub WebSocket session, verified subscriptions, normalization and reconnect. |
+| `src/twitch/clips.ts` | Opt-in stream status and clip creation, with scope/live/cooldown/session-cap gates. |
 | `src/codex/runner.ts` | SDK-injected real build runner, workspace constraints, stream redaction, output checks and error codes. |
 | `src/codex/replay.ts` | Atomic build recording storage and latest successful recording selection. |
 | `src/hype/engine.ts` | Bounded activity windows, baseline, smoothing, level and trend calculation. |
@@ -47,12 +48,12 @@ flowchart LR
 | `library/catalog.json` | Curated Library records, prompts and creator metadata. |
 | `templates.json` | Build prompt template catalog. |
 | `docs/WIDGET_API.md` | Public widget contract, security constraints, optional APIs and heuristics. |
-| `docs/AUTO_CLIPS.md` | Verified Twitch API references and current disabled implementation status. |
+| `docs/AUTO_CLIPS.md` | Verified Twitch API references, opt-in behavior and limits. |
 | `docs/HOW_WE_USED_CODEX.md` | Commit-history-based development and safety-model record. |
 | `docs/QA_REPORT.md` | Phase 4B QA harness baseline, checks and known limits. |
 | `scripts/qa-ui.mjs` | Mock server + installed Chrome/CDP dashboard and overlay visual QA. |
 | `scripts/qa-phase3.mjs` | Phase 3 isolated browser/API smoke across pages and widgets. |
-| `scripts/check-*.mjs` | Focused widget, template, Passport, Hype, sessions, scenes, clips, multilingual, Demo Director, dotenv, OAuth, token store, IRC, EventSub, fake Codex runner and replay checks; `*-api` scripts start local mock servers. |
+| `scripts/check-*.mjs` | Focused widget, template, Passport, Hype, sessions, scenes, clips, multilingual, Demo Director, dotenv, OAuth, token store, IRC, EventSub, fake Twitch clips API, fake Codex runner, verification and replay checks; `*-api` scripts start local mock servers. |
 | `scripts/diagnose-phase4b.mjs` | Phase 4B UI/preview diagnostic probe. |
 | `scripts/check-theme-frames.mjs` | Phase 4B sandbox frame theme-token diagnostic/check. |
 | `scripts/restart.mjs` | Stops the current local process on the configured port and restarts the app. |
@@ -76,7 +77,7 @@ Server-to-client message types include `hello`, `event`, `request`, `queue`, `bu
 
 ## State and settings
 
-The main `Store` shape is `requests`, `requestHistory`, `widgets`, `library`, `settings`, optional `widgetStorage`, and optional `codexVerification`. It is saved atomically to `data/state.json` (or `STREAMFORGE_DATA_DIR`). Settings cover approval mode and thresholds, build mode/timeout/retry preference, theme preset/tokens, Safe Mode, Hype sensitivity/boost/mute/reactivity/overlay meter, session idle/name preferences, Auto-Clips preferences, and active scene/undo snapshot. Twitch tokens live in ignored `data/twitch-token.json`; sessions live below `data/sessions`; user scene presets live in `data/scenes.json`; successful or failed Codex build event records live in ignored `replay/*.json`. Development mode remains mock/replay; live SDK/Twitch behavior was not exercised.
+The main `Store` shape is `requests`, `requestHistory`, `widgets`, `library`, `settings`, optional `widgetStorage`, and optional `codexVerification`. It is saved atomically to `data/state.json` (or `STREAMFORGE_DATA_DIR`). Settings cover approval mode and thresholds, build mode/timeout/retry preference, theme preset/tokens, Safe Mode, Hype sensitivity/boost/mute/reactivity/overlay meter, session idle/name preferences, Auto-Clips opt-in/triggers/cooldown/cap, and active scene/undo snapshot. Twitch tokens live in ignored `data/twitch-token.json`; sessions live below `data/sessions`; user scene presets live in `data/scenes.json`; successful or failed Codex build event records live in ignored `replay/*.json`. Development verification uses mocks/fakes; live SDK/Twitch behavior remains unverified.
 
 ## Widget runtime and security
 

@@ -22,3 +22,9 @@ Authorization uses `https://id.twitch.tv/oauth2/authorize` with a random one-use
 Protocol references: [OAuth authorization code grant](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/), [token validation](https://dev.twitch.tv/docs/authentication/validate-tokens/), [refresh tokens](https://dev.twitch.tv/docs/authentication/refresh-tokens/), [EventSub WebSocket handling](https://dev.twitch.tv/docs/eventsub/handling-websocket-events/), and [managing EventSub subscriptions](https://dev.twitch.tv/docs/eventsub/manage-subscriptions/).
 
 The OAuth service is tested with an injected fake fetch implementation. Development does not invoke Twitch endpoints.
+
+## Stream status and Auto-Clips
+
+Auto-Clips is disabled by default and stream status is queried only after a user explicitly enables it with live Twitch enabled and the `clips:edit` scope granted. Stream status uses `GET https://api.twitch.tv/helix/streams?user_id=...`; clip creation uses `POST https://api.twitch.tv/helix/clips?broadcaster_id=...`, requires a user token with `clips:edit`, and is accepted asynchronously by Twitch. The app enforces one shared cooldown and a per-session success cap, deduplicates concurrent attempts, checks that the channel is live before creating a clip, and does not retry rate-limited requests. Created edit URLs are accepted only from Twitch's HTTPS clip hosts.
+
+These endpoints and requirements are from Twitch's [Get Streams and Create Clip API reference](https://dev.twitch.tv/docs/api/reference) and [clips guide](https://dev.twitch.tv/docs/api/clips/). All automated tests inject fake fetch responses; development does not call Twitch.

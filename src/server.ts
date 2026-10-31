@@ -18,6 +18,7 @@ import { TwitchOAuth } from "./twitch/oauth.js";
 import { TwitchTokenStore } from "./twitch/token-store.js";
 import { TwitchIrcClient } from "./twitch/irc-client.js";
 import { TwitchEventSubClient } from "./twitch/eventsub-client.js";
+import { TwitchClipManager } from "./twitch/clips.js";
 import { codexFailureMessage, parseWidgetMeta as parseCodexWidgetMeta, runCodexWidgetBuild, type CodexRunnerError } from "./codex/runner.js";
 import { latestSuccessfulBuildRecording, writeBuildRecording, type BuildRecording, type RecordedBuildEvent } from "./codex/replay.js";
 import { verifyCodex } from "./codex/verify.js";
@@ -128,10 +129,28 @@ store.settings.sessionAutoEndMinutes ??= 0;
 store.settings.activeScene ||= "";
 let userScenes:ScenePreset[]=[];try{const saved=JSON.parse(await readFile(scenesPath,"utf8"));if(Array.isArray(saved))userScenes=saved.filter((scene)=>scene&&typeof scene.id==="string"&&typeof scene.name==="string"&&scene.builtIn===false&&Array.isArray(scene.widgetIds)&&scene.widgetIds.every((id:unknown)=>typeof id==="string")&&isThemePreset(scene.theme)&&["off","reduced","minimal"].includes(scene.safeMode));}catch{/* user scenes are optional */}
 const sessions=new SessionManager(path.join(dataDir,"sessions"));await sessions.init();if(store.settings.includeChatterNames!==true)await sessions.setIncludeNames(false);
+let lastClip: { id: string; editUrl: string; at: string } | undefined;
+let lastRealActivityAt = 0;
+let hypePeakSince = 0;
+let realActivityPeakHandled = false;
+const twitchClips = new TwitchClipManager({
+  clientId: process.env.TWITCH_CLIENT_ID || "",
+  broadcasterId: () => twitchTokenStore.identity?.broadcasterId || "",
+  getAccessToken: () => twitchTokenStore.getFreshAccessToken(),
+  hasClipScope: () => twitchTokenStore.identity?.scopes.includes("clips:edit") === true,
+  enabled: () => liveTwitchEnabled(process.env) && store.settings.autoClipsEnabled === true,
+  sessionCount: () => sessions.currentSession()?.clipsCreated || 0,
+  sessionCap: () => Number(store.settings.clipSessionCap) || 10,
+  cooldownSeconds: () => Number(store.settings.clipCooldownSeconds) || 120,
+  lastAttemptAt: () => Number(store.settings.lastClipAttemptAt) || 0,
+  onAttempt: async (at) => { store.settings.lastClipAttemptAt=at; await persist(); },
+  onCreated: async () => { await sessions.record("clipsCreated"); },
+});
 const hypeEngine=new HypeEngine();let lastHypePublish=0;let pendingHypePublish:NodeJS.Timeout|undefined;let simulatedHypeUntil=0;let simulatedHypeEnergy=0;
 function hypeSettings():HypeSettings{return{sensitivity:(store.settings.hypeSensitivity==="low"||store.settings.hypeSensitivity==="high"?store.settings.hypeSensitivity:"normal"),manualBoost:Math.max(-50,Math.min(50,Number(store.settings.manualHypeBoost)||0)),muted:store.settings.hypeMuted===true,reactive:store.settings.hypeReactive===true,simulatedEnergy:Date.now()<simulatedHypeUntil?simulatedHypeEnergy:0};}
 function hypeSnapshot(){return hypeEngine.snapshot(hypeSettings());}
-function publishHype():void{const wait=Math.max(0,250-(Date.now()-lastHypePublish));if(wait){if(!pendingHypePublish)pendingHypePublish=setTimeout(()=>{pendingHypePublish=undefined;lastHypePublish=Date.now();const hype=hypeSnapshot();publish({type:"hype",hype});void sessions.recordHype(hype.value);},wait);return;}lastHypePublish=Date.now();const hype=hypeSnapshot();publish({type:"hype",hype});void sessions.recordHype(hype.value);}
+function publishHype():void{const wait=Math.max(0,250-(Date.now()-lastHypePublish));if(wait){if(!pendingHypePublish)pendingHypePublish=setTimeout(()=>{pendingHypePublish=undefined;lastHypePublish=Date.now();publishHypeNow();},wait);return;}lastHypePublish=Date.now();publishHypeNow();}
+function publishHypeNow():void{const hype=hypeSnapshot(),now=Date.now();publish({type:"hype",hype});void sessions.recordHype(hype.value);if(hype.value>=80&&now-lastRealActivityAt<30_000){if(!hypePeakSince)hypePeakSince=now;}else{hypePeakSince=0;realActivityPeakHandled=false;}if(store.settings.autoClipsEnabled===true&&(store.settings.clipTriggers as Record<string,unknown>)?.hypePeak===true&&hypePeakSince>0&&!realActivityPeakHandled&&now-hypePeakSince>=Number(store.settings.clipHypePeakSeconds)*1000){realActivityPeakHandled=true;void triggerClip("StreamForge hype peak");}}
 
 async function persist(): Promise<void> {
   const tempPath = `${storePath}.${randomUUID()}.tmp`;
@@ -212,6 +231,7 @@ app.use("/widgets", express.static(widgetRoot, {
 
 const twitchIrc = new TwitchIrcClient({
   onMessage: async (message) => {
+    lastRealActivityAt = Date.now();
     try {
       await fetch(`http://127.0.0.1:${port}/api/chat`, {
         method: "POST",
@@ -230,7 +250,7 @@ const twitchIrc = new TwitchIrcClient({
 });
 const twitchEventSub = new TwitchEventSubClient({
   clientId: process.env.TWITCH_CLIENT_ID || "",
-  onEvent: (event) => dispatchStreamEvent(event.type, event.payload, false),
+  onEvent: (event) => { lastRealActivityAt = Date.now(); return dispatchStreamEvent(event.type, event.payload, false); },
   onStatus: (status) => {
     eventSubState = status === "connecting" ? "needs_setup" : status;
     eventSubError = status === "error" ? "Twitch EventSub disconnected; reconnecting quietly." : undefined;
@@ -321,11 +341,12 @@ app.get("/api/state", async (_req, res) => {
 });
 app.get("/api/hype",(_req,res)=>res.json(hypeSnapshot()));
 const clipMomentKinds=new Set(["natural20","goalReached"]);const clipMomentAt=new Map<string,number>();
-function clipStatus(){return{enabled:store.settings.autoClipsEnabled===true,scopeRequired:"clips:edit",authorizationAvailable:false,channelLive:false,liveStatus:"unavailable; treated as not live",created:0,triggers:store.settings.clipTriggers,hypePeakSeconds:store.settings.clipHypePeakSeconds,cooldownSeconds:store.settings.clipCooldownSeconds,sessionCap:store.settings.clipSessionCap};}
-app.get("/api/clips",(_req,res)=>res.json(clipStatus()));
-app.patch("/api/clips/settings",async(req,res)=>{const triggers=req.body?.triggers;const cooldown=req.body?.cooldownSeconds;const cap=req.body?.sessionCap;const peakSeconds=req.body?.hypePeakSeconds;if(triggers!==undefined&&(!triggers||typeof triggers!=="object"||Object.keys(triggers).some((key)=>!["hypePeak","widgetMoments","manual","moderatorCommand"].includes(key))||Object.values(triggers).some((value)=>typeof value!=="boolean")))return res.status(400).json({error:"Clip triggers must be boolean values for the supported trigger types."});if(cooldown!==undefined&&(!Number.isInteger(Number(cooldown))||Number(cooldown)<120||Number(cooldown)>86400))return res.status(400).json({error:"Global clip cooldown must be 120 to 86400 seconds."});if(cap!==undefined&&(!Number.isInteger(Number(cap))||Number(cap)<1||Number(cap)>10))return res.status(400).json({error:"Per-session clip cap must be 1 to 10."});if(peakSeconds!==undefined&&(!Number.isInteger(Number(peakSeconds))||Number(peakSeconds)<1||Number(peakSeconds)>120))return res.status(400).json({error:"Peak duration must be 1 to 120 seconds."});if(triggers)store.settings.clipTriggers={...(store.settings.clipTriggers as object),...triggers};if(cooldown!==undefined)store.settings.clipCooldownSeconds=Number(cooldown);if(cap!==undefined)store.settings.clipSessionCap=Number(cap);if(peakSeconds!==undefined)store.settings.clipHypePeakSeconds=Number(peakSeconds);store.settings.autoClipsEnabled=false;await persist();res.json(clipStatus());});
-app.post("/api/clips/manual",(_req,res)=>{const message=recordError("CLIP_DISABLED");res.status(409).json({ok:false,code:"CLIP_DISABLED",error:message,clip:null});});
-app.post("/api/widgets/:id/moment",(req,res)=>{const widget=store.widgets.find((item)=>item.id===req.params.id);if(!widget)return res.status(404).json({error:"Widget not found."});const kind=req.body?.kind;if(typeof kind!=="string"||!clipMomentKinds.has(kind))return res.status(400).json({error:"Moment kind is not allow-listed."});const now=Date.now(),last=clipMomentAt.get(widget.id)||0;if(now-last<30_000)return res.status(429).json({error:"Widget moments are limited to one every 30 seconds."});clipMomentAt.set(widget.id,now);if(store.settings.clipTriggers&&typeof store.settings.clipTriggers==="object"&&(store.settings.clipTriggers as Record<string,unknown>).widgetMoments===true){const message=recordError("CLIP_DISABLED");return res.status(409).json({ok:false,code:"CLIP_DISABLED",error:message});}res.status(202).json({ok:true,accepted:true,kind});});
+async function triggerClip(title="StreamForge moment") { const result=await twitchClips.createClip(title);if(result.ok){lastClip={id:result.id,editUrl:result.editUrl,at:new Date().toISOString()};await persist();publish({type:"clipCreated",clip:lastClip});}else{recordError(result.code as ErrorCode);publish({type:"clipStatus",code:result.code});}return result; }
+async function clipStatus(){let stream:{live:boolean;status:"live"|"offline"|"unavailable"}={live:false,status:"unavailable"};if(store.settings.autoClipsEnabled===true&&liveTwitchEnabled(process.env)&&twitchTokenStore.status().connected)stream=await twitchClips.getLiveStatus();const identity=twitchTokenStore.identity;return{enabled:store.settings.autoClipsEnabled===true,scopeRequired:"clips:edit",authorizationAvailable:identity?.scopes.includes("clips:edit")===true,channelLive:stream.live,liveStatus:stream.status,created:sessions.currentSession()?.clipsCreated||0,lastClip,triggers:store.settings.clipTriggers,hypePeakSeconds:store.settings.clipHypePeakSeconds,cooldownSeconds:store.settings.clipCooldownSeconds,sessionCap:store.settings.clipSessionCap};}
+app.get("/api/clips",async(_req,res)=>res.json(await clipStatus()));
+app.patch("/api/clips/settings",async(req,res)=>{const triggers=req.body?.triggers;const cooldown=req.body?.cooldownSeconds;const cap=req.body?.sessionCap;const peakSeconds=req.body?.hypePeakSeconds;const enabled=req.body?.enabled;if(enabled!==undefined&&typeof enabled!=="boolean")return res.status(400).json({error:"Auto-Clips must be enabled or disabled."});if(triggers!==undefined&&(!triggers||typeof triggers!=="object"||Object.keys(triggers).some((key)=>!["hypePeak","widgetMoments","manual","moderatorCommand"].includes(key))||Object.values(triggers).some((value)=>typeof value!=="boolean")))return res.status(400).json({error:"Clip triggers must be boolean values for the supported trigger types."});if(cooldown!==undefined&&(!Number.isInteger(Number(cooldown))||Number(cooldown)<120||Number(cooldown)>86400))return res.status(400).json({error:"Global clip cooldown must be 120 to 86400 seconds."});if(cap!==undefined&&(!Number.isInteger(Number(cap))||Number(cap)<1||Number(cap)>10))return res.status(400).json({error:"Per-session clip cap must be 1 to 10."});if(peakSeconds!==undefined&&(!Number.isInteger(Number(peakSeconds))||Number(peakSeconds)<1||Number(peakSeconds)>120))return res.status(400).json({error:"Peak duration must be 1 to 120 seconds."});if(enabled===true&&(!liveTwitchEnabled(process.env)||!twitchTokenStore.identity?.scopes.includes("clips:edit")))return res.status(409).json({error:"Enable live Twitch and authorize with clips:edit before enabling Auto-Clips."});if(triggers)store.settings.clipTriggers={...(store.settings.clipTriggers as object),...triggers};if(cooldown!==undefined)store.settings.clipCooldownSeconds=Number(cooldown);if(cap!==undefined)store.settings.clipSessionCap=Number(cap);if(peakSeconds!==undefined)store.settings.clipHypePeakSeconds=Number(peakSeconds);if(enabled!==undefined)store.settings.autoClipsEnabled=enabled;await persist();res.json(await clipStatus());});
+app.post("/api/clips/manual",async(_req,res)=>{if((store.settings.clipTriggers as Record<string,unknown>)?.manual!==true)return res.status(409).json({ok:false,code:"CLIP_DISABLED",error:errorMessages.CLIP_DISABLED});const result=await triggerClip();if(!result.ok)return res.status(409).json({ok:false,code:result.code,error:errorMessages[result.code as ErrorCode],clip:null});res.json({ok:true,clip:lastClip});});
+app.post("/api/widgets/:id/moment",async(req,res)=>{const widget=store.widgets.find((item)=>item.id===req.params.id);if(!widget)return res.status(404).json({error:"Widget not found."});const kind=req.body?.kind;if(typeof kind!=="string"||!clipMomentKinds.has(kind))return res.status(400).json({error:"Moment kind is not allow-listed."});const now=Date.now(),last=clipMomentAt.get(widget.id)||0;if(now-last<30_000)return res.status(429).json({error:"Widget moments are limited to one every 30 seconds."});clipMomentAt.set(widget.id,now);if((store.settings.clipTriggers as Record<string,unknown>)?.widgetMoments===true){const result=await triggerClip(`StreamForge ${kind}`);if(!result.ok)return res.status(409).json({ok:false,code:result.code,error:errorMessages[result.code as ErrorCode]});}res.status(202).json({ok:true,accepted:true,kind});});
 app.get("/api/sessions",(_req,res)=>res.json({current:sessions.currentSession()||null,sessions:sessions.list(),settings:{autoEndIdleMinutes:store.settings.sessionAutoEndMinutes,includeChatterNames:store.settings.includeChatterNames}}));
 app.post("/api/sessions/start",async(_req,res)=>{const session=await sessions.start();publish({type:"session",action:"start",session});res.status(201).json(session);});
 app.post("/api/sessions/end",async(_req,res)=>{const session=await sessions.end();if(!session)return res.status(409).json({error:"There is no active session."});publish({type:"session",action:"end",session});res.json(session);});
@@ -864,7 +885,7 @@ app.post("/api/chat", async (req, res) => {
   const safeModeMatch=/^!safe-mode\s+(off|reduced|minimal)$/iu.exec(message);
   if(safeModeMatch&&req.body?.isMod===true){const level=safeModeMatch[1].toLowerCase() as keyof typeof motionScales;store.settings.safeMode=level;await persist();publish({type:"safeMode",level,motionScale:motionScales[level]});}
   const sceneMatch=/^!?scene\s+(.+)$/iu.exec(message);if(sceneMatch&&req.body?.isMod===true){const scene=findScene(sceneMatch[1]);if(scene)await switchScene(scene);else publish({type:"moderation",message:"Scene not found. Check the saved scene names."});}
-  if(/^!?clip$/iu.test(message)&&req.body?.isMod===true){publish({type:"moderation",message:errorMessages.CLIP_DISABLED});}
+  if(/^!?clip$/iu.test(message)&&req.body?.isMod===true){if((store.settings.clipTriggers as Record<string,unknown>)?.moderatorCommand===true){const result=await triggerClip();publish({type:"moderation",message:result.ok?"Clip created and ready to review.":errorMessages[result.code as ErrorCode]});}else publish({type:"moderation",message:errorMessages.CLIP_DISABLED});}
   res.json({ ok: true });
 });
 app.post("/api/requests/:id/:action", async (req, res) => {
