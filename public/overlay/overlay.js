@@ -56,6 +56,7 @@ async function load() {
 function escapeText(value) { const element=document.createElement("span");element.textContent=String(value);return element.innerHTML; }
 addEventListener("resize", positionFrames);
 load();
+fetch("/api/demo/status").then(response=>response.json()).then(status=>{document.querySelector("#simulated-badge").hidden=!status.active;}).catch(()=>{});
 socket.addEventListener("message", (event) => {
   let message; try { message = JSON.parse(event.data); } catch { return; }
   if (message.type === "event") {
@@ -64,6 +65,7 @@ socket.addEventListener("message", (event) => {
   if(message.type==="theme"){themeTokens=message.tokens;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");}
   if(message.type==="safeMode"){safeModeLevel=message.level;document.body.dataset.safeMode=safeModeLevel;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:safe-mode",level:safeModeLevel},"*");}
   if(message.type==="scene"&&message.scene)applyScene(message.scene.id,message.scene.name);
+  if(message.type==="demoStatus")document.querySelector("#simulated-badge").hidden=!message.active;
   if(message.type==="hype")updateHype(message.hype);
   if(message.type==="hypeSettings"&&message.settings){overlayHypeMeter=message.settings.overlayMeter===true;document.querySelector("#hype-meter").hidden=!overlayHypeMeter;}
   if (message.type === "widgets") load();
@@ -75,7 +77,7 @@ socket.addEventListener("message", (event) => {
     const item=document.createElement("div");item.className="feed-item";
     const elapsed=Math.max(0,Math.floor((Date.now()-Date.parse(message.request.createdAt))/1000));
     const checks=message.checks?`<div class="small">${Object.entries(message.checks).map(([name,ok])=>`${ok?"✓":"○"} ${escapeText(({syntax:"Syntax",network:"No network access",forbiddenApis:"No forbidden APIs",mockMount:"Mounts without errors"})[name]||name)}`).join(" · ")}</div>`:"";
-    item.innerHTML=`<strong>${escapeText(message.request.text)}</strong><br><span>${escapeText(message.request.requester)} · ${escapeText(message.stage)} · ${elapsed}s</span><div>${escapeText(message.detail)}</div>${checks}<div class="progress"><i style="width:${labels[message.stage]||15}%"></i></div>`;
+    item.innerHTML=`<strong>${message.request.simulated?"SIMULATED · ":""}${escapeText(message.request.text)}</strong><br><span>${escapeText(message.request.requester)} · ${escapeText(message.stage)} · ${elapsed}s</span><div>${escapeText(message.detail)}</div>${checks}<div class="progress"><i style="width:${labels[message.stage]||15}%"></i></div>`;
     document.querySelector("#feed-items").prepend(item);
   }
   if (message.type === "draftPreview" && document.querySelector("#feed").hidden === false) {

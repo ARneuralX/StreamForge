@@ -20,6 +20,20 @@ This summary follows the repository commit history. It distinguishes the SDK ver
 | Phase 3 stage 6 | `b3a486d` | Added feature-detected push-to-talk voice prompts with an explicit edit-and-submit step. |
 | Phase 3 stage 7 | `1881a6c` | Updated feature documentation and added the isolated end-to-end browser smoke. |
 
+## Phase 4 implementation history
+
+| Stage | Commit | Work recorded in Git |
+| --- | --- | --- |
+| Stage 1 | `eb5c563` | Added server-computed Widget Passports, heuristic risk summaries and Safe Mode. |
+| Stage 2 | `3a7b303`, `417c256` | Added aggregate Hype Signal and aligned its schema, controls and widget API. |
+| Stage 3 | `f582df2` | Added persisted stream sessions, aggregate recaps and canvas exports. |
+| Stage 4 | `19db867` | Added read-only scenes, saved duplicates, switching and Undo. |
+| Stage 5 | `68b8790` | Added Auto-Clips preferences, explicit optional scope request and validated widget moments. Clip creation remains disabled because OAuth exchange and live status are unavailable. |
+| Stage 6 | `5a13ea7` | Added Unicode normalization, heuristic script chips and a manual-review gate for likely non-English requests. |
+| Stage 7 | `Phase 4 stage 7: add Demo Director and final polish` | Added a JSON-driven simulated sequence, local replay feed, settings restoration, recap SIMULATED marking and Phase 4 documentation. |
+
+Phase 4 uses the deterministic mock path. No real Codex build or Twitch API traffic was run. Auto-Clips remains OFF because the local OAuth callback does not exchange tokens and channel live-state checking is absent; language identification remains heuristic.
+
 ## Safety model in the repository
 
 Widget frames are sandboxed with scripts enabled and same-origin access disabled. Their CSP blocks network connections. The server statically scans widget source, then runs a VM mock mount before promoting imports or builds. Widget changes use Git checkpoints and the Undo path safety-checks the restored source. Chat and widget text is rendered as text, public activity redacts paths and usernames, and widget storage requests pass through the host with safe keys and a size limit.

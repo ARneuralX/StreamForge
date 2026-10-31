@@ -26,7 +26,7 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
     const executable = source.replace(/\bexport\s+default\s+/u, "globalThis.widget = ");
     const script = new vm.Script(executable, { filename: "widget-module.js" });
     const makeElement = () => ({ textContent: "", className: "", children: [] as unknown[], attributes: {} as Record<string, string>, dataset: {} as Record<string,string>, style: {setProperty(){}}, classList: { add() {}, remove() {}, toggle() {} }, setAttribute(name: string, value: string) { this.attributes[name] = value; }, append(...children: unknown[]) { this.children.push(...children); }, replaceChildren(...children:unknown[]){this.children=[...children];} });
-    const context = vm.createContext({ document: { createElement: makeElement }, Math, String, Number, Boolean, Array, Object, JSON, Map, Set, Promise });
+    const context = vm.createContext({ document: { createElement: makeElement }, Math, Date, String, Number, Boolean, Array, Object, JSON, Map, Set, Promise });
     script.runInContext(context, { timeout: 500 });
     const widget = (context as { widget?: { meta?: unknown; mount?: (api: unknown) => unknown } }).widget;
     if (!widget?.meta || typeof widget.mount !== "function") throw new Error("missing default export or meta");

@@ -65,3 +65,14 @@ The Hype meter uses rolling aggregate chat and event activity with calm/warm/hot
 Stream sessions auto-start on first activity and store aggregate JSON under ignored `data/sessions/`. The Sessions & Recap page exports themed portrait/landscape PNGs, recap JSON, and an end-of-stream overlay. Chatter names are excluded unless explicitly enabled.
 
 Scene Presets include Starting Soon, Be Right Back, Hype Mode and Ending. Built-ins are read-only; custom copies live under ignored `data/scenes.json`. Switching scenes preserves every widget record and can be undone.
+
+## Phase 4 stream tools
+
+- **Hype Signal:** Overview shows aggregate chat energy, trend, settings and a time-limited simulated energy control. Hype uses aggregate counters only; it does not store chat text or names.
+- **Sessions & Recap:** sessions auto-start on activity or can be started/ended from the Sessions & Recap page. Export portrait or landscape PNGs, recap JSON, and an overlay recap. Chatter names default off.
+- **Scenes:** use Starting Soon, Be Right Back, Hype Mode or Ending in the Scenes page. Duplicate a built-in before editing. Scene switching remembers the previous state and Undo restores it.
+- **Auto-Clips:** Settings has individually toggleable triggers and cooldown/cap preferences. Auto-Clips stays OFF in this build because Twitch OAuth token exchange and stream-status checks are not implemented. Only the explicit reauthorization link requests `clips:edit`; no clip is created by mock events. See [docs/AUTO_CLIPS.md](docs/AUTO_CLIPS.md).
+- **Multilingual requests:** text is normalized and checked by Unicode code points. Build Studio shows a script chip. The default-on “Require manual approval for non-English viewer requests” setting prevents auto-vote/timer approval of likely non-English viewer requests. Script and language detection are heuristics.
+- **Demo Director:** open the Demo Director page and choose **Run demo sequence**. Use Speed to change pacing or **Stop and restore** to stop and restore the previous theme, scene, Safe Mode, hype sensitivity and widget set. The sequence is stored at `public/dashboard/demo-sequence.json`, runs only simulated local events, and marks the active session recap SIMULATED.
+
+Useful focused checks: `npm run test:clips`, `npm run test:multilingual`, `npm run test:demo`, `npm run test:sessions`, `npm run test:scenes`, and `npx tsc --noEmit`.

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "title": "StreamForge Demo Director",
+  "steps": [
+    { "type": "energy", "value": 18, "label": "Chat energy starts to rise", "durationMs": 700 },
+    { "type": "energy", "value": 54, "label": "Chat energy builds", "durationMs": 700 },
+    { "type": "energy", "value": 92, "label": "Peak chat energy", "durationMs": 700 },
+    { "type": "natural20", "label": "Natural 20", "durationMs": 800 },
+    { "type": "event", "event": "follow", "label": "Follow", "durationMs": 650 },
+    { "type": "event", "event": "sub", "label": "Subscription", "durationMs": 650 },
+    { "type": "event", "event": "raid", "label": "Raid", "durationMs": 800 },
+    { "type": "theme", "theme": "Neon", "label": "Neon theme", "durationMs": 800 },
+    { "type": "scene", "scene": "hype-mode", "label": "Hype Mode scene", "durationMs": 900 },
+    { "type": "replayedBuild", "label": "Replayed mock build", "durationMs": 900 }
+  ]
+}
