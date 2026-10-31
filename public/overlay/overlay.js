@@ -92,6 +92,12 @@ window.addEventListener("message", async (event) => {
     await fetch(`/api/widgets/${encodeURIComponent(widgetId)}/storage`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({key:message.key,value:message.value})}).catch(()=>{});
     return;
   }
+  if(message?.kind==="streamforge:moment"){
+    const widgetId=[...frames.entries()].find(([,frame])=>frame.contentWindow===event.source)?.[0];
+    if(!widgetId||widgetId!==message.id)return;
+    await fetch(`/api/widgets/${encodeURIComponent(widgetId)}/moment`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:message.moment?.kind})});
+    return;
+  }
   if (!message || message.kind !== "streamforge:runtime-error") return;
   const frame = frames.get(message.id);
   if (!frame || event.source !== frame.contentWindow) return;

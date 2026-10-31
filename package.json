@@ -17,7 +17,8 @@
     "test:passport": "npm run build && node scripts/check-passport.mjs",
     "test:hype": "npm run build && node scripts/check-hype.mjs && node scripts/check-hype-api.mjs",
     "test:sessions": "npm run build && node scripts/check-sessions.mjs && node scripts/check-sessions-api.mjs",
-    "test:scenes": "npm run build && node scripts/check-scenes-api.mjs"
+    "test:scenes": "npm run build && node scripts/check-scenes-api.mjs",
+    "test:clips": "npm run build && node scripts/check-clips-api.mjs"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.166.0",

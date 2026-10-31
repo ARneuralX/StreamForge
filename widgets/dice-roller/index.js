@@ -16,6 +16,7 @@ export default {
       const roll = Math.floor(Math.random() * 20) + 1;
       result.textContent = `Rolled ${roll}${roll === 20 ? " — Critical! ✨" : ""}`;
       if (roll === 20) {
+        api.emit?.("moment",{kind:"natural20",label:"Natural 20"});
         const motionScale=Number.isFinite(api.motionScale)?api.motionScale:1;if(Date.now()-lastFlashAt>=333&&motionScale>.15){lastFlashAt=Date.now();fireworks.textContent=motionScale<.75?"✦":"🎆 ✦ ✨ ✦ 🎇";fireworks.className="fireworks active";api.sound?.play?.("sparkle");}
       } else {
         fireworks.textContent = "";

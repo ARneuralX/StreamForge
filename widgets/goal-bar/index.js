@@ -10,7 +10,9 @@ export default {
     const draw = () => { followBar.value = follows; subBar.value = subs; followLabel.textContent = `Followers  ${follows} / 50`; subLabel.textContent = `Subscribers  ${subs} / 10`; };
     api.root.append(title, followLabel, followBar, subLabel, subBar); draw();
     api.on("hype",(hype)=>{if(!hype?.reactive||hype.muted)return;api.root.dataset.hype=hype.level;title.style.setProperty("--hype-glow-size",`${5+8*hype.value/100}px`);});
-    api.on("follow", () => { follows = Math.min(50, follows + 1); draw(); });
-    api.on("sub", () => { subs = Math.min(10, subs + 1); draw(); });
+    let goalMomentSent=false;
+    const checkGoal=()=>{if(!goalMomentSent&&follows>=50&&subs>=10){goalMomentSent=true;api.emit?.("moment",{kind:"goalReached",label:"Community goals reached"});}};
+    api.on("follow", () => { follows = Math.min(50, follows + 1); draw(); checkGoal(); });
+    api.on("sub", () => { subs = Math.min(10, subs + 1); draw(); checkGoal(); });
   },
 };
