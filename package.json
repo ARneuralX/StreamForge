@@ -14,6 +14,8 @@
     "test:twitch-token": "npm run build && node scripts/check-twitch-token-store.mjs",
     "test:twitch-irc": "npm run build && node scripts/check-twitch-irc.mjs",
     "test:eventsub": "npm run build && node scripts/check-twitch-eventsub.mjs",
+    "test:codex-runner": "npm run build && node scripts/check-codex-runner.mjs",
+    "test:build-replay": "npm run build && node scripts/check-build-replay.mjs",
     "start": "npm run build && node dist/server.js",
     "restart": "node scripts/restart.mjs",
     "test:widgets": "npm run build && node scripts/check-dice.mjs && node scripts/check-starter-pack.mjs",

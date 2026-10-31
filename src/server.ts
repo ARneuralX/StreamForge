@@ -19,6 +19,8 @@ import { TwitchOAuth } from "./twitch/oauth.js";
 import { TwitchTokenStore } from "./twitch/token-store.js";
 import { TwitchIrcClient } from "./twitch/irc-client.js";
 import { TwitchEventSubClient } from "./twitch/eventsub-client.js";
+import { codexFailureMessage, parseWidgetMeta as parseCodexWidgetMeta, runCodexWidgetBuild, type CodexRunnerError } from "./codex/runner.js";
+import { latestSuccessfulBuildRecording, writeBuildRecording, type BuildRecording, type RecordedBuildEvent } from "./codex/replay.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
@@ -42,6 +44,7 @@ const publicRoot = path.join(root, "public");
 const dataDir = path.resolve(process.env.STREAMFORGE_DATA_DIR || path.join(root, "data"));
 const widgetRoot = path.resolve(process.env.STREAMFORGE_WIDGETS_DIR || path.join(root, "widgets"));
 const scenesPath=path.join(dataDir,"scenes.json");
+const replayDir=path.join(root,"replay");
 
 for (const [key, value] of Object.entries(await loadEnvFile(path.join(root, ".env")))) {
   if (process.env[key] === undefined) process.env[key] = value;
@@ -107,6 +110,7 @@ if (!Array.isArray(store.library)) store.library = librarySeed;
 store.widgetStorage ||= {};
 store.library = [...librarySeed.map((seed) => store.library.find((entry) => entry.id === seed.id) || seed), ...store.library.filter((entry) => !librarySeed.some((seed) => seed.id === entry.id))];
 store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
+if (["mock", "replay", "codex"].includes(process.env.BUILD_MODE || "")) store.settings.buildMode = process.env.BUILD_MODE;
 if (!store.settings.themeTokens || typeof store.settings.themeTokens !== "object") store.settings.themeTokens = themePresets.Clean;
 store.settings.safeMode ||= "off";
 store.settings.hypeSensitivity ||= "normal";
@@ -570,9 +574,195 @@ async function mockBuild(request: Request): Promise<void> {
   if (draftDir) await rm(draftDir, { recursive: true, force: true }).catch(() => {});
   setTimeout(() => safeDrafts.delete(request.id), 5 * 60_000).unref();
 }
+async function codexBuild(request: Request): Promise<void> {
+  const buildStartedAt = Date.now();
+  const isRemix = request.kind === "remix";
+  const widgetId = isRemix ? request.widgetId || "" : `community-${request.id.slice(0, 8)}`;
+  const targetPath = path.join(widgetRoot, widgetId, "index.js");
+  const draftDirectory = path.join(dataDir, ".drafts", widgetId, request.id);
+  const outputPath = path.join(draftDirectory, "index.js");
+  const events: RecordedBuildEvent[] = [];
+  let originalSource = "";
+  let checkpointRef: string | undefined;
+  let promoted = false;
+  let sourceCommitted = false;
+  let succeeded = false;
+  let finalChecks: { syntax: boolean; network: boolean; forbiddenApis: boolean; mockMount: boolean } | undefined;
+
+  const emit = (stage: string, detail: string, checks?: { syntax: boolean; network: boolean; forbiddenApis: boolean; mockMount: boolean }) => {
+    const safeDetail = redactDisplay(detail).slice(0, 240);
+    buildFeed(request, stage, safeDetail, checks);
+    events.push({ stage, detail: safeDetail, checks, at: new Date().toISOString() });
+  };
+
+  try {
+    if (isRemix) {
+      if (!store.widgets.some((item) => item.id === widgetId) || !/^[a-z0-9-]{1,80}$/u.test(widgetId)) throw Object.assign(new Error(), { code: "CODEX_BAD_OUTPUT" });
+      const status = execFileSync("git", ["status", "--porcelain", "--", path.relative(root, targetPath)], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      if (status.trim()) throw Object.assign(new Error(), { code: "CODEX_BAD_OUTPUT" });
+      originalSource = await readFile(targetPath, "utf8");
+    }
+    if (widgetRoot === path.join(root, "widgets")) {
+      execFileSync("git", ["diff", "--cached", "--quiet"], { cwd: root, stdio: "ignore" });
+      const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      checkpointRef = `refs/streamforge/checkpoints/${request.id}`;
+      execFileSync("git", ["update-ref", checkpointRef, head], { cwd: root, stdio: "ignore" });
+    }
+    setState(request, "building");
+    emit("Approved", "Request approved for the Codex runner.");
+    await persist();
+    const widgetApiDocumentation = await readFile(path.join(root, "docs/WIDGET_API.md"), "utf8");
+    const result = await runCodexWidgetBuild({
+      draftDirectory,
+      outputPath,
+      widgetApiDocumentation,
+      request: request.text,
+      languageInstruction: request.languageInstruction,
+      existingSource: originalSource || undefined,
+      timeoutSeconds: Number(store.settings.buildTimeoutSeconds) || 120,
+      retryOnce: store.settings.retryFailedBuildOnce === true,
+      checkSource: checkWidgetSource,
+      onProgress: ({ stage, detail }) => emit(stage, detail),
+      onSafePreview: (source) => {
+        safeDrafts.set(request.id, source);
+        publish({ type: "draftPreview", request: publicRequest(request), requestId: request.id, url: `/api/requests/${request.id}/preview`, widgetId });
+      },
+    });
+    if (request.status === "building") setState(request, "checking");
+    finalChecks = { syntax: true, network: true, forbiddenApis: true, mockMount: true };
+    emit("Safety checks", `Draft passed all checks in ${Math.round(result.elapsedMs / 1000)} seconds. Preview - not live yet.`, finalChecks);
+
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    const promoteTemp = `${targetPath}.${request.id}.tmp`;
+    await writeWidgetFile(promoteTemp, result.source, { mode: 0o600 });
+    await chmod(promoteTemp, 0o600);
+    await rename(promoteTemp, targetPath);
+    promoted = true;
+
+    if (widgetRoot === path.join(root, "widgets")) {
+      execFileSync("git", ["add", "--", path.relative(root, targetPath)], { cwd: root, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", `Codex build widget ${widgetId}`], { cwd: root, stdio: "ignore" });
+      sourceCommitted = true;
+    }
+    if (!isRemix) {
+      store.widgets.push({ id: widgetId, ...result.meta, enabled: true, passport: undefined });
+    }
+    const widget = store.widgets.find((item) => item.id === widgetId);
+    if (!widget) throw Object.assign(new Error(), { code: "CODEX_BAD_OUTPUT" });
+    widget.title = result.meta.title;
+    widget.description = result.meta.description;
+    widget.width = result.meta.width;
+    widget.height = result.meta.height;
+    widget.x = result.meta.x;
+    widget.y = result.meta.y;
+    widget.anchor = result.meta.anchor;
+    widget.enabled = true;
+    widget.passport = await widgetPassport(widget, result.source);
+    if (checkpointRef) {
+      execFileSync("git", ["update-ref", "-d", checkpointRef], { cwd: root, stdio: "ignore" });
+      checkpointRef = undefined;
+    }
+    if (request.status === "checking") setState(request, "live");
+    succeeded = true;
+    void sessions.recordBuild(buildStartedAt);
+    emit("Live", "Widget passed checks and is ready on the overlay.", finalChecks);
+    await persist();
+    publish({ type: "widgets", widgets: store.widgets });
+  } catch (error) {
+    if (promoted) {
+      if (isRemix && originalSource) {
+        const restorePath = `${targetPath}.${request.id}.rollback`;
+        await writeWidgetFile(restorePath, originalSource, { mode: 0o600 }).catch(() => undefined);
+        await rename(restorePath, targetPath).catch(() => undefined);
+      } else {
+        await rm(path.dirname(targetPath), { recursive: true, force: true }).catch(() => undefined);
+        store.widgets = store.widgets.filter((widget) => widget.id !== widgetId);
+      }
+      if (widgetRoot === path.join(root, "widgets")) {
+        try {
+          execFileSync("git", ["reset", "--", path.relative(root, targetPath)], { cwd: root, stdio: "ignore" });
+          if (sourceCommitted) {
+            execFileSync("git", ["add", "--", path.relative(root, targetPath)], { cwd: root, stdio: "ignore" });
+            execFileSync("git", ["commit", "-m", `Rollback failed Codex build ${widgetId}`], { cwd: root, stdio: "ignore" });
+          }
+        } catch { /* filesystem restore remains the primary rollback */ }
+      }
+    }
+    const code = (error as CodexRunnerError)?.code;
+    request.failure = code ? codexFailureMessage(error as CodexRunnerError) : "Codex could not complete the widget build.";
+    if (["building", "checking", "live"].includes(request.status)) setState(request, "rolled_back");
+    else if (request.status === "approved") setState(request, "failed");
+    emit("Rolled back", request.failure);
+    await persist();
+  } finally {
+    safeDrafts.delete(request.id);
+    await rm(draftDirectory, { recursive: true, force: true }).catch(() => undefined);
+    if (checkpointRef) execFileSync("git", ["update-ref", "-d", checkpointRef], { cwd: root, stdio: "ignore" });
+    try {
+      await writeBuildRecording(replayDir, {
+        request: { text: redactDisplay(request.text).slice(0, 300), kind: request.kind || "build" },
+        events,
+        status: succeeded ? "live" : request.status === "rolled_back" ? "rolled_back" : "failed",
+        ...(succeeded ? { widgetId } : {}),
+      });
+    } catch {
+      buildFeed(request, "Safety checks", "The build finished, but its local replay record could not be saved.");
+    }
+    setTimeout(() => safeDrafts.delete(request.id), 5 * 60_000).unref();
+  }
+}
+
+async function replayBuild(request: Request): Promise<void> {
+  const recording = await latestSuccessfulBuildRecording(replayDir);
+  if (!recording || !recording.widgetId || !/^[a-z0-9-]{1,80}$/u.test(recording.widgetId)) {
+    request.failure = "No successful build recording is available. Run a real build first.";
+    setState(request, "failed");
+    buildFeed(request, "Rolled back", request.failure);
+    await persist();
+    return;
+  }
+  try {
+    const sourcePath = path.join(widgetRoot, recording.widgetId, "index.js");
+    const source = await readFile(sourcePath, "utf8");
+    const check = await checkWidgetSource(source);
+    const meta = parseCodexWidgetMeta(source);
+    if (!check.ok || !meta) throw new Error("REPLAY_WIDGET_INVALID");
+    setState(request, "building");
+    const publishReplay = (stage: string, detail: string, checks?: unknown) => {
+      publish({ type: "buildFeed", request: { ...publicRequest(request), simulated: true, source: "replay" }, stage, detail: redactDisplay(detail), checks, at: new Date().toISOString() });
+    };
+    publishReplay("Approved", "DEMO MODE · playing a recorded build feed.");
+    for (const event of recording.events) {
+      if (!["Planning", "Writing code", "Safety checks", "Live"].includes(event.stage)) continue;
+      if (event.stage === "Safety checks" && request.status === "building") setState(request, "checking");
+      if (event.stage !== "Live") publishReplay(event.stage, `DEMO MODE · ${event.detail}`, event.checks);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    if (request.status === "building") setState(request, "checking");
+    let widget = store.widgets.find((item) => item.id === recording.widgetId);
+    if (!widget) {
+      widget = { id: recording.widgetId, ...meta, enabled: true };
+      store.widgets.push(widget);
+    }
+    widget.enabled = true;
+    widget.passport = await widgetPassport(widget, source, check);
+    setState(request, "live");
+    publishReplay("Live", "DEMO MODE · recorded widget is active; no Codex task was started.", check.checks);
+    await persist();
+    publish({ type: "widgets", widgets: store.widgets });
+  } catch {
+    request.failure = "The recorded widget is unavailable or failed the safety checks.";
+    if (["building", "checking"].includes(request.status)) setState(request, "rolled_back");
+    else if (request.status === "approved") setState(request, "failed");
+    buildFeed(request, "Rolled back", request.failure);
+    await persist();
+  }
+}
 let buildChain: Promise<void> = Promise.resolve();
 function runBuild(request: Request): Promise<void> {
-  buildChain = buildChain.then(() => mockBuild(request));
+  const mode = String(store.settings.buildMode || "mock");
+  const runner = mode === "codex" ? codexBuild : mode === "replay" ? replayBuild : mockBuild;
+  buildChain = buildChain.then(() => runner(request));
   return buildChain;
 }
 async function undoWidget(widgetId: string): Promise<{ ok: boolean; reason?: string }> {

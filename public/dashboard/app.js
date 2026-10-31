@@ -12,10 +12,11 @@ const root = document.querySelector("#page");
 const links = [...document.querySelectorAll("[data-page]")];
 let state = { requests: [], widgets: [], settings: {} };
 let latestDraftPreview;
+let latestBuildFeed=[];
 const hypeHistory=[];
 function paintHype(hype){if(!hype)return;state.hype=hype;hypeHistory.push(hype.value);if(hypeHistory.length>48)hypeHistory.shift();const score=document.querySelector("#hype-score"),level=document.querySelector("#hype-level"),progress=document.querySelector("#hype-progress"),stats=document.querySelector("#hype-stats"),canvas=document.querySelector("#hype-sparkline");if(score)score.textContent=String(hype.value);if(level)level.textContent=`${hype.level} · ${hype.trend}`;if(progress)progress.value=hype.value;if(stats)stats.textContent=`10s: ${hype.window10.messagesPerSecond}/s · ${hype.window10.uniqueChatters} chatters · 60s baseline ${hype.baselinePerMinute}/min`;if(canvas){const ctx=canvas.getContext("2d");if(ctx){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.strokeStyle="#8afff0";ctx.lineWidth=2;ctx.beginPath();hypeHistory.forEach((value,index)=>{const x=index/(Math.max(1,hypeHistory.length-1))*canvas.width;const y=canvas.height-(value/100)*(canvas.height-4)-2;if(index===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);});ctx.stroke();}}}
 
-async function refresh() { try { state = await (await fetch("/api/state")).json(); state.draftPreview=latestDraftPreview; } catch { /* page reports local API errors */ } }
+async function refresh() { try { state = await (await fetch("/api/state")).json(); state.draftPreview=latestDraftPreview; state.buildFeed=latestBuildFeed; } catch { /* page reports local API errors */ } }
 async function render() {
   await refresh();
   const key = location.hash.slice(1) || "overview";
@@ -45,4 +46,4 @@ async function status() {
 }
 status();
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message;if(message.type==="hype"){paintHype(message.hype);return;}if(message.type==="hypeSettings")return; } catch { /* ignore malformed transport data */ } render(); });
+socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message;if(message.type==="buildFeed"){latestBuildFeed.unshift(message);latestBuildFeed=latestBuildFeed.slice(0,40);render();return;}if(message.type==="hype"){paintHype(message.hype);return;}if(message.type==="hypeSettings")return; } catch { /* ignore malformed transport data */ } render(); });

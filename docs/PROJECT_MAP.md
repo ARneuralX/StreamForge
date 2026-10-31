@@ -27,6 +27,13 @@ flowchart LR
 | `src/security/widget-checks.ts` | Static forbidden-API scan and isolated VM mock mount. |
 | `src/security/passport.ts` | Server-generated widget capability and heuristic motion-risk summary. |
 | `src/security/contrast.ts` | WCAG color contrast and accessible text-color selection. |
+| `src/config/env.ts` | Quoted dotenv parsing and the single live Twitch switch. |
+| `src/twitch/oauth.ts` | CSRF-protected authorization code exchange, token validation, scope checks and identity lookup. |
+| `src/twitch/token-store.ts` | Atomic mode-0600 token persistence, refresh, status and disconnect. |
+| `src/twitch/irc-client.ts` | Twitch IRC WebSocket handshake, parsing and quiet reconnect. |
+| `src/twitch/eventsub-client.ts` | EventSub WebSocket session, verified subscriptions, normalization and reconnect. |
+| `src/codex/runner.ts` | SDK-injected real build runner, workspace constraints, stream redaction, output checks and error codes. |
+| `src/codex/replay.ts` | Atomic build recording storage and latest successful recording selection. |
 | `src/hype/engine.ts` | Bounded activity windows, baseline, smoothing, level and trend calculation. |
 | `src/sessions/manager.ts` | Persisted session lifecycle, aggregates, activity and recap data. |
 | `public/dashboard/index.html`, `app.css`, `app.js` | Dashboard shell, layout/styles, navigation, state refresh, health strip, and live WebSocket updates. |
@@ -45,7 +52,7 @@ flowchart LR
 | `docs/QA_REPORT.md` | Phase 4B QA harness baseline, checks and known limits. |
 | `scripts/qa-ui.mjs` | Mock server + installed Chrome/CDP dashboard and overlay visual QA. |
 | `scripts/qa-phase3.mjs` | Phase 3 isolated browser/API smoke across pages and widgets. |
-| `scripts/check-*.mjs` | Focused widget, template, Passport, Hype, sessions, scenes, clips, multilingual and Demo Director checks; `*-api` scripts start local mock servers. |
+| `scripts/check-*.mjs` | Focused widget, template, Passport, Hype, sessions, scenes, clips, multilingual, Demo Director, dotenv, OAuth, token store, IRC, EventSub, fake Codex runner and replay checks; `*-api` scripts start local mock servers. |
 | `scripts/diagnose-phase4b.mjs` | Phase 4B UI/preview diagnostic probe. |
 | `scripts/check-theme-frames.mjs` | Phase 4B sandbox frame theme-token diagnostic/check. |
 | `scripts/restart.mjs` | Stops the current local process on the configured port and restarts the app. |
@@ -61,7 +68,7 @@ Static routes: `/` redirects to `/dashboard/`; `/dashboard`, `/overlay`, and `/w
 - Events and operations: `POST /api/simulate/:event`, `GET /api/hype`, `POST /api/hype/simulate`, `PATCH /api/hype/settings`, `GET /api/clips`, `PATCH /api/clips/settings`, `POST /api/clips/manual`.
 - Sessions: `GET /api/sessions`, `POST /api/sessions/start`, `POST /api/sessions/end`, `PATCH /api/sessions/settings`, `GET /api/sessions/:id`, `GET /api/sessions/:id/recap.json`, `GET /api/sessions/:id/export.json`, `DELETE /api/sessions/:id`.
 - Presentation: `GET /api/scenes`, `POST /api/scenes/:id/apply`, `POST /api/scenes/undo`, `POST /api/scenes/duplicate`, `PATCH|DELETE /api/scenes/:id`, `GET /api/demo/status`, `POST /api/demo/start|stop|natural20|replayed-build`, `PATCH /api/theme`, `POST /api/theme/contrast-fix`, `PATCH /api/safe-mode`, `POST /api/theme/generate`, `POST /api/kits/:id`.
-- Twitch authorization currently has `GET /auth/twitch` and a placeholder `GET /auth/twitch/callback` that returns HTTP 501; token exchange and live connections are absent.
+- Twitch authorization has `GET /auth/twitch`, `GET /auth/twitch/callback`, and `POST /api/twitch/disconnect`. OAuth and local client implementations exist; live connections remain unverified manually.
 
 ## WebSocket messages
 
@@ -69,7 +76,7 @@ Server-to-client message types include `hello`, `event`, `request`, `queue`, `bu
 
 ## State and settings
 
-The main `Store` shape is `requests`, `requestHistory`, `widgets`, `library`, `settings`, optional `widgetStorage`, and optional `codexVerification`. It is saved atomically to `data/state.json` (or `STREAMFORGE_DATA_DIR`). Settings cover approval mode and thresholds, build mode/timeout/retry preference, theme preset/tokens, Safe Mode, Hype sensitivity/boost/mute/reactivity/overlay meter, session idle/name preferences, Auto-Clips preferences, and active scene/undo snapshot. Sessions live below `data/sessions`; user scene presets live in `data/scenes.json`. Development builds default to the mock runner; live OAuth and Twitch connections are not implemented.
+The main `Store` shape is `requests`, `requestHistory`, `widgets`, `library`, `settings`, optional `widgetStorage`, and optional `codexVerification`. It is saved atomically to `data/state.json` (or `STREAMFORGE_DATA_DIR`). Settings cover approval mode and thresholds, build mode/timeout/retry preference, theme preset/tokens, Safe Mode, Hype sensitivity/boost/mute/reactivity/overlay meter, session idle/name preferences, Auto-Clips preferences, and active scene/undo snapshot. Twitch tokens live in ignored `data/twitch-token.json`; sessions live below `data/sessions`; user scene presets live in `data/scenes.json`; successful or failed Codex build event records live in ignored `replay/*.json`. Development mode remains mock/replay; live SDK/Twitch behavior was not exercised.
 
 ## Widget runtime and security
 

@@ -22,9 +22,11 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
   if (!/export\s+default\s+\{/u.test(source) || !/\bmeta\s*:/u.test(source) || !/\bmount\s*\(/u.test(source)) {
     return { ok: false, reason: "Widget must export default { meta, mount }.", checks: { syntax: false, network: true, forbiddenApis: true, mockMount: false } };
   }
+  let syntaxPassed = false;
   try {
     const executable = source.replace(/\bexport\s+default\s+/u, "globalThis.widget = ");
     const script = new vm.Script(executable, { filename: "widget-module.js" });
+    syntaxPassed = true;
     const makeElement = () => ({ textContent: "", className: "", children: [] as unknown[], attributes: {} as Record<string, string>, dataset: {} as Record<string,string>, style: {setProperty(){}}, classList: { add() {}, remove() {}, toggle() {} }, setAttribute(name: string, value: string) { this.attributes[name] = value; }, append(...children: unknown[]) { this.children.push(...children); }, replaceChildren(...children:unknown[]){this.children=[...children];} });
     const context = vm.createContext({ document: { createElement: makeElement }, Math, Date, String, Number, Boolean, Array, Object, JSON, Map, Set, Promise });
     script.runInContext(context, { timeout: 500 });
@@ -41,13 +43,17 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
       emit(name:string,payload?:unknown) { return name==="moment"&&Boolean(payload); },
       sound: { play() {} }, timers: { setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {} }, storage: { get() { return null; }, set() {} },
     };
-    const mountResult = widget.mount(api);
-    if (mountResult instanceof Promise) await mountResult;
+    try {
+      const mountResult = widget.mount(api);
+      if (mountResult instanceof Promise) await mountResult;
+    } catch {
+      return { ok: false, reason: "Widget mock mount threw.", checks: { syntax: true, network: true, forbiddenApis: true, mockMount: false } };
+    }
     for (const [eventName, handlers] of listeners) {
       for (const handler of handlers) await handler({ type: eventName, message: "!attack", name: "Simulated viewer", user: "Simulated viewer", viewers: 8, isMod: true, simulated: true, level:"reduced", motionScale:.5, payload: {} });
     }
     return { ok: true, checks: { syntax: true, network: true, forbiddenApis: true, mockMount: true } };
   } catch {
-    return { ok: false, reason: "Widget failed the syntax or mock mount check.", checks: { syntax: false, network: true, forbiddenApis: true, mockMount: false } };
+    return { ok: false, reason: syntaxPassed ? "Widget mock mount threw." : "Widget syntax check failed.", checks: { syntax: syntaxPassed, network: true, forbiddenApis: true, mockMount: false } };
   }
 }

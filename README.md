@@ -11,6 +11,8 @@ StreamForge is a local dashboard and OBS browser overlay for community-driven st
 
 The Twitch Developer Console redirect URL is `http://localhost:3000/auth/twitch/callback` (use the selected port if changed). The OBS browser source URL is `http://localhost:3000/overlay/`. The overlay defaults to a transparent background. Simulate controls are local and labelled; they do not contact Twitch.
 
+For Twitch, set `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_CHANNEL`, and `TWITCH_LIVE_ENABLED=true` in your local `.env`, then use **Connect Twitch**. The callback validates the authorization and stores its token privately. Chat and EventSub connect on app start after authorization. Do not set the live switch while developing with mock events.
+
 ## Dashboard features
 
 - **Overview:** request form, setup checklist, simulated chat/follow/sub/raid/redeem events, theme presets, overlay kits, twelve prompt templates, and optional voice prompts.
@@ -52,13 +54,13 @@ When Web Speech recognition is supported, hold the microphone button beside the 
 
 Widgets export `default { meta, mount(api) }`; see [docs/WIDGET_API.md](docs/WIDGET_API.md). Frames use `sandbox="allow-scripts"` without `allow-same-origin`, and the widget CSP blocks network connections. The static scan blocks unsafe APIs, imports must pass a VM mock mount, widget changes use Git checkpoints, and rollback rechecks source. Widget event text is untrusted and rendered as text. Widget storage is mediated by the host, validated and size-limited.
 
-This development run uses the deterministic mock runner and simulated events. It does not run real Codex builds or real Twitch traffic. The mock runner uses a fixed safe fixture; it does not turn a request into custom source. Twitch OAuth, token storage, IRC, and EventSub client code are implemented. Real Codex builds and stream-status checks remain; no live connection has been exercised. The Settings retry and timeout values are persisted for a future live runner; they do not produce a retry/timeout cycle in the deterministic mock path. Codex theme suggestions use preset fallback.
+Choose `BUILD_MODE=mock`, `replay`, or `codex` in `.env`. Mock uses a fixed safe fixture. Codex runs the installed SDK only when an approved request is built, in an isolated hidden draft directory with network disabled; it promotes output only after syntax, static scan and VM mock-mount checks. It streams redacted progress to Build Studio and the overlay. Successful and failed Codex runs are recorded without widget source or tokens in ignored `replay/*.json`; replay mode plays the latest successful recording and labels it DEMO MODE. This development session tested the SDK runner with a fake SDK and used only mock/replay behavior; it did not run a real Codex build or contact Twitch. Real stream-status and clip creation remain unavailable. Codex theme suggestions use preset fallback.
 
 ## Checks and screenshots
 
 Run `npx tsc --noEmit`, `npm run test:widgets`, and `npm run test:templates`. To capture a dashboard or overlay image, start StreamForge, open the target page in Chrome, set the browser viewport to the desired size, then use Chrome DevTools **Capture screenshot** or macOS screenshot controls. Keep screenshots outside the repository unless they are intentional product assets.
 
-The Codex SDK Step 0 gate was run by the user. The SDK verification task and real build flow have not been exercised in this development session.
+The Codex SDK Step 0 gate was run by the user. Real SDK login, Verify Codex, a real build and Twitch authorization still need the user's manual check in their own Terminal.
 
 The Hype meter uses rolling aggregate chat and event activity with calm/warm/hot/peak levels, a trend indicator, sensitivity, manual boost, mute, and reactive-widget controls. The separate chat-energy slider is marked SIMULATED and expires after 15 seconds. It exposes no chatter names; simulated activity never contacts Twitch.
 

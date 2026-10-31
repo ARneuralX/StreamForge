@@ -1,6 +1,7 @@
 .env
 .streamforge/
 data/
+replay/*.json
 qa-artifacts/
 node_modules/
 dist/

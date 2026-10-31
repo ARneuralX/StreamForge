@@ -122,3 +122,10 @@
 - Startup and successful OAuth callback now start both Twitch clients when `TWITCH_LIVE_ENABLED=true` and a token is available. Disconnect stops both. Live connections were not made.
 - Verified subscriptions, conditions, auth headers, normalized payloads, duplicate suppression, reconnect migration and stop with fake sockets/endpoints (`npm run test:eventsub`). Existing clips/demo mock APIs and TypeScript pass; `git diff --check` passes.
 - Next: R6 replace the mock-only runner with the real Codex SDK module; use only an injected fake SDK in checks.
+
+### Real integration step 6: Codex SDK runner and replay
+
+- Done: added the SDK-backed runner with workspace-write sandboxing, network disabled, bounded timeout, optional single retry, untrusted request delimiting, exact output path enforcement, redacted progress events, checked draft previews, syntax/static scan/mock mount validation, and specific failure reporting. Successful drafts are promoted with a Git checkpoint and rollback path; remix refuses locally modified source and staged-index changes.
+- Added private atomic build replay records. Replay mode rechecks the recorded widget before enabling it and labels each feed update as DEMO MODE; it does not start a Codex task.
+- Verified with injected fake SDK and replay fixtures only (`npm run test:codex-runner`, `npm run test:build-replay`, `npm run test:widgets`), `npx tsc --noEmit`, JS syntax and whitespace checks, and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes and overlay, zero findings). No real Codex build was run.
+- Next: R7 add an explicit temporary-directory Codex verification flow with fake-only checks.
