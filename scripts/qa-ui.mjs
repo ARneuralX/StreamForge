@@ -17,7 +17,7 @@ const freePort = () => new Promise((resolve, reject) => {
 const appPort = await freePort(); let debugPort = await freePort();
 while (debugPort === appPort) debugPort = await freePort();
 const base = `http://127.0.0.1:${appPort}`;
-const server = spawn(process.execPath, [path.join(root, "dist/server.js")], { cwd: root, stdio: "ignore", env: { ...process.env, PORT: String(appPort), OPEN_BROWSER: "false", BUILD_MODE: "mock", STREAMFORGE_DATA_DIR: path.join(temp, "data") } });
+const server = spawn(process.execPath, [path.join(root, "dist/server.js")], { cwd: root, stdio: "ignore", env: { ...process.env, PORT: String(appPort), OPEN_BROWSER: "false", TWITCH_LIVE_ENABLED: "false", BUILD_MODE: "mock", STREAMFORGE_DATA_DIR: path.join(temp, "data") } });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms)); let chrome, socket;
 async function waitFor(check, label, timeout = 20_000) {
   const end = Date.now() + timeout;
@@ -61,7 +61,8 @@ try {
     const blend=(top,bottom)=>{const a=top[3],out=a+bottom[3]*(1-a);return[0,1,2].map(i=>out?(top[i]*a+bottom[i]*bottom[3]*(1-a))/out:0).concat(out)};
     const lum=c=>{const q=c.slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return .2126*q[0]+.7152*q[1]+.0722*q[2]};const contrast=[];
     for(const e of els){if(!e.innerText?.trim()||e.children.length&&e.innerText.trim().length<2)continue;const s=getComputedStyle(e),fg=rgba(s.color);let bg=[12,11,18,1],anc=[];for(let n=e;n;n=n.parentElement)anc.unshift(n);for(const n of anc){const cs=getComputedStyle(n),raw=cs.backgroundColor;if(raw!=="rgba(0, 0, 0, 0)"&&raw!=="transparent")bg=blend(rgba(raw),bg);const stops=cs.backgroundImage.match(/rgba?\\([^)]*\\)/gu)||[];if(stops.length>=2)bg=blend(blend(rgba(stops[0]),rgba(stops.at(-1))),bg);}const ratio=(Math.max(lum(fg),lum(bg))+.05)/(Math.min(lum(fg),lum(bg))+.05),large=parseFloat(s.fontSize)>=24||parseFloat(s.fontSize)>=18.66&&parseInt(s.fontWeight)>=700;if(ratio<(large?3:4.5))contrast.push({text:e.innerText.trim().slice(0,32),ratio:Number(ratio.toFixed(2))});}
-    return{overflow,clipped,targets,overlaps,contrast:contrast.slice(0,8)};
+    const stats=document.querySelector(".overview-stats"),twoColumn=document.querySelector(".overview-two-column"),overviewAudit=location.hash==="#overview"?{statsGrid:getComputedStyle(stats).display==="grid"&&getComputedStyle(stats).gridTemplateColumns.split(" ").length>=3,twoColumnGrid:getComputedStyle(twoColumn).display==="grid"&&getComputedStyle(twoColumn).gridTemplateColumns.split(" ").length>=2,summarySpaced:getComputedStyle(document.querySelector(".overview-section summary")).display==="flex",demoCollapsible:Boolean(document.querySelector("#overview-demo details[data-section=demo]")),recapContained:document.querySelector("#overview-recap").getBoundingClientRect().width<=document.querySelector("#overview-recap").parentElement.getBoundingClientRect().width+1}:null;
+    return{overflow,clipped,targets,overlaps,contrast:contrast.slice(0,8),overviewAudit};
   })()`;
   for (const [width, height] of viewports) {
     await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
@@ -69,6 +70,7 @@ try {
       const name = `${hash}-${width}x${height}`; await cdp("Page.navigate", { url: `${base}/dashboard/#${hash}` });
       await waitFor(async () => evaluate(`document.querySelector('#page h1')?.textContent===${JSON.stringify(title)}`), name); await sleep(100);
       const result = await evaluate(layoutExpression);
+      if(hash==="overview"&&Object.entries(result.overviewAudit||{}).some(([,passed])=>!passed))failures.push(`${name}: overview structure ${JSON.stringify(result.overviewAudit)}`);
       if (result.overflow) failures.push(`${name}: horizontal overflow`); if (result.clipped.length) failures.push(`${name}: clipped text ${JSON.stringify(result.clipped)}`);
       if (result.targets.length) failures.push(`${name}: undersized targets ${JSON.stringify(result.targets)}`); if (result.overlaps.length) failures.push(`${name}: overlapping cards ${JSON.stringify(result.overlaps)}`);
       if (result.contrast.length) failures.push(`${name}: low contrast ${JSON.stringify(result.contrast)}`);

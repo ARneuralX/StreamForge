@@ -1,5 +1,10 @@
 # StreamForge progress
 
+## Phase 4B repair audit
+
+- Reproduced Overview defect A in the captured 1024×768 screenshot: the three stats cards stack in one column, Hype and Scene Presets form a single unstructured column, and section title/helper text run together. Existing QA reports no geometric overlap, so the root cause is missing Overview-specific grid/flex spacing rules rather than positioned elements. The current QA harness did not check the intended grid/collapse structure; added an audit that failed for the missing stats grid, paired Hype/Scene grid and summary spacing before the CSS fix.
+- Remaining reported defects (theme response, preview backgrounds, and Library reliability) will be reproduced and root-caused at their ordered stages before fixes.
+
 ## Master baseline
 
 - Done: Read the master run and master spec. The Step 0 script passed when run by the user; it was not rerun here.
@@ -155,3 +160,10 @@
 - Done: `npm start` builds and starts the dashboard, macOS launch targets Google Chrome, `OPEN_BROWSER=false` suppresses launch, and `npm run restart` relaunches the local server. Port conflicts now share a one-shot HTTP/WebSocket error handler and exit with one clear line rather than an unhandled `ws` stack trace.
 - Added an isolated startup smoke check that launches the mock server with Twitch and browser launch forced off, then checks the dashboard-ready message and the busy-port exit. `npm run test:startup`, TypeScript, restart/startup script syntax, `git diff --check`, and final `OPEN_BROWSER=false npm run qa:ui` pass (8 pages × 4 sizes and overlay, zero findings). No real Twitch or Codex traffic occurred.
 - Part 2 R1–R10 is complete. Next: Part 3 Phase 4B stages 2–6, starting with the Overview stage 2 spec.
+
+### Phase 4B stage 2: Overview redesign
+
+- Done: added responsive stat and Hype/Scene grids, consistent card and disclosure spacing, responsive quick-start/scene/widget/recap layouts, and subtle entrance motion that is disabled for reduced-motion preferences. The Demo Director disclosure remembers its open state through the Overview's existing local-storage handler. The recap canvas stays within its card at landscape and portrait aspect ratios.
+- Root cause was missing Overview-specific CSS rather than positional overlap. The enhanced `qa:ui` structural assertions reproduced the missing layouts before the fix. Afterward, QA reports zero overlap, horizontal overflow, clipped text, undersized controls, contrast issues or browser errors across all 8 pages × 4 viewports and overlay.
+- Verified `npx tsc --noEmit`, `OPEN_BROWSER=false npm run qa:ui`, and `git diff --check`.
+- Next: Phase 4B stage 3 trace and prove theme token response in sandboxed widgets.
