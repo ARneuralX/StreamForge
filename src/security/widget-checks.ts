@@ -34,10 +34,13 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
     const api = {
       root: makeElement(),
       on(name: string, handler: Function) { listeners.set(name, [...(listeners.get(name) || []), handler]); },
-      sound: { play() {} }, timers: { setTimeout, clearTimeout, setInterval, clearInterval }, storage: { get() { return null; }, set() {} },
+      sound: { play() {} }, timers: { setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {} }, storage: { get() { return null; }, set() {} },
     };
     const mountResult = widget.mount(api);
     if (mountResult instanceof Promise) await mountResult;
+    for (const [eventName, handlers] of listeners) {
+      for (const handler of handlers) await handler({ type: eventName, message: "!attack", name: "Simulated viewer", viewers: 8, payload: {} });
+    }
     return { ok: true, checks: { syntax: true, network: true, forbiddenApis: true, mockMount: true } };
   } catch {
     return { ok: false, reason: "Widget failed the syntax or mock mount check.", checks: { syntax: false, network: true, forbiddenApis: true, mockMount: false } };

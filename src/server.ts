@@ -48,11 +48,14 @@ const storePath = path.join(dataDir, "state.json");
 const starterWidgets: WidgetMeta[] = [
   { id: "dice-roller", title: "Dice Roller", description: "Roll a d20 with chat using !roll d20.", width: 440, height: 190, x: 32, y: 32, anchor: "top-left", enabled: true },
   { id: "prediction-scoreboard", title: "Prediction Scoreboard", description: "Chat votes with !a and !b.", width: 440, height: 210, x: 0, y: 0, anchor: "top-right", enabled: true },
-  { id: "boss-bar", title: "Boss Bar", description: "Chat attacks with !attack.", width: 500, height: 180, x: 0, y: 0, anchor: "bottom-left", enabled: true },
+  { id: "boss-bar", title: "Chat Boss Bar", description: "Chat attacks and heals the boss with !attack and !heal.", width: 500, height: 180, x: 0, y: 0, anchor: "bottom-left", enabled: true },
+  { id: "goal-bar", title: "Follow & Sub Goals", description: "Track follower and subscriber progress live.", width: 500, height: 230, x: 0, y: 0, anchor: "top-left", enabled: true },
+  { id: "chat-poll", title: "Live Chat Poll", description: "Run an A/B poll with chat commands.", width: 440, height: 230, x: 0, y: 0, anchor: "top-right", enabled: true },
+  { id: "countdown-timer", title: "Chat Countdown", description: "A stream timer that chat can extend.", width: 420, height: 170, x: 0, y: 0, anchor: "bottom-right", enabled: true },
   { id: "screen-effects", title: "Celebration Effects", description: "Celebrate follows, subs and raids.", width: 420, height: 260, x: 0, y: 0, anchor: "center", enabled: true },
   { id: "welcome-banner", title: "Welcome Banner", description: "A friendly message for new followers.", width: 460, height: 110, x: 0, y: 0, anchor: "bottom-right", enabled: true },
 ];
-const librarySeed: LibraryEntry[] = starterWidgets.map((widget) => ({ id: widget.id, widgetId: widget.id, title: widget.title, description: widget.description, originalPrompt: `Create a polished ${widget.title.toLowerCase()} overlay using only the StreamForge Widget API.`, creator: "StreamForge" }));
+const librarySeed = JSON.parse(await readFile(path.join(root, "library/catalog.json"), "utf8")) as LibraryEntry[];
 const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0 } };
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
@@ -60,6 +63,7 @@ catch { store = defaultStore; }
 if (!Array.isArray(store.widgets) || store.widgets.length === 0) store.widgets = starterWidgets;
 if (!Array.isArray(store.requestHistory)) store.requestHistory = [...store.requests];
 if (!Array.isArray(store.library)) store.library = librarySeed;
+store.library = [...librarySeed.map((seed) => store.library.find((entry) => entry.id === seed.id) || seed), ...store.library.filter((entry) => !librarySeed.some((seed) => seed.id === entry.id))];
 store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
 
 async function persist(): Promise<void> {
@@ -117,9 +121,21 @@ app.use("/widgets", express.static(widgetRoot, {
 app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: process.env.TWITCH_LIVE_ENABLED === "true", chat: "needs_setup", eventSub: "needs_setup" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" } }));
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
-  res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, settings: store.settings, codexVerification: store.codexVerification });
+  res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, codexVerification: store.codexVerification });
 });
 app.get("/api/library", (_req, res) => res.json(store.library));
+app.post("/api/library/:id/add", async (req, res) => {
+  const entry = store.library.find((item) => item.id === req.params.id);
+  if (!entry) return res.status(404).json({error:"Library widget not found."});
+  let widget = store.widgets.find((item) => item.id === entry.widgetId);
+  if (!widget) {
+    const base = starterWidgets.find((item) => item.id === entry.widgetId);
+    if (!base) return res.status(409).json({error:"Widget source is unavailable."});
+    widget = { ...base, enabled: true }; store.widgets.push(widget);
+  } else widget.enabled = true;
+  await persist(); publish({type:"widgets",widgets:store.widgets});
+  res.json({ok:true,widget});
+});
 app.post("/api/codex/verify", async (_req, res) => {
   const workingDirectory = await mkdtemp(path.join(os.tmpdir(), "streamforge-verify-"));
   const outputPath = path.join(workingDirectory, "verification.txt");
@@ -354,9 +370,14 @@ app.patch("/api/settings", async (req, res) => {
 app.post("/api/simulate/:event", (req, res) => {
   const allowed = new Set(["chat", "follow", "sub", "raid", "redeem"]);
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
-  const event = { type: req.params.event, payload: req.body ?? {}, simulated: true, at: new Date().toISOString() };
-  publish({ type: "event", event });
-  if (event.type === "redeem" && store.settings.approval === "auto-points" && req.body?.reward === "Build a widget") {
+  const eventType = req.params.event;
+  if (eventType === "chat" && Array.isArray(req.body?.commands)) {
+    for (const message of req.body.commands.slice(0,10)) publish({type:"event",event:{type:"chat",payload:{message:String(message).slice(0,100),user:"Simulated viewer"},simulated:true,at:new Date().toISOString()}});
+  } else {
+    const event = { type: eventType, payload: req.body ?? {}, simulated: true, at: new Date().toISOString() };
+    publish({ type: "event", event });
+  }
+  if (eventType === "redeem" && store.settings.approval === "auto-points" && req.body?.reward === "Build a widget") {
     const text = typeof req.body?.user_input === "string" ? req.body.user_input.trim().slice(0, 300) : "Make a channel point widget";
     void createRequest(text || "Make a channel point widget", "Channel point redeemer", "points").then(async (request) => { setState(request, "approved"); await persist(); await runBuild(request); });
   }
@@ -374,6 +395,11 @@ app.patch("/api/widgets/:id", async (req, res) => {
   await persist();
   publish({ type: "widgets", widgets: store.widgets });
   res.json(widget);
+});
+app.delete("/api/widgets/:id", async (req, res) => {
+  const widget=store.widgets.find((item)=>item.id===req.params.id);
+  if(!widget)return res.status(404).json({error:"Widget not found."});
+  widget.enabled=false;await persist();publish({type:"widgets",widgets:store.widgets});res.json({ok:true});
 });
 app.get("/auth/twitch", (_req, res) => {
   if (!process.env.TWITCH_CLIENT_ID) return res.status(503).json({ error: "Add TWITCH_CLIENT_ID to .env before authorizing Twitch." });

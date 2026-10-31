@@ -5,8 +5,14 @@ export default {
     const title = document.createElement("h2"); title.textContent = "🐉 The Chat Boss";
     const meter = document.createElement("progress"); meter.max = 100; meter.value = hp;
     const label = document.createElement("p");
-    const draw = () => { meter.value = hp; label.textContent = `Boss health ${hp}%`; };
+    let status = "";
+    const draw = () => { meter.value = hp; label.textContent = status || `Boss health ${hp}%`; };
     api.root.append(title, meter, label); draw();
-    api.on("chat", (event) => { const text = String(event.message || "").toLowerCase(); if (text === "!attack") hp = hp <= 10 ? 100 : hp - 10; draw(); });
+    api.on("chat", (event) => {
+      const text = String(event.message || "").trim().toLowerCase(); status = "";
+      if (text === "!attack") { hp = Math.max(0, hp - 10); if (hp === 0) { status = "Boss defeated! A new round begins."; hp = 100; } }
+      if (text === "!heal") { hp = Math.min(100, hp + 10); if (hp === 100) status = "Boss fully healed. Keep the fight going!"; }
+      draw();
+    });
   },
 };

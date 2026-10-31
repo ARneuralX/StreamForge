@@ -12,4 +12,4 @@ export default {
 };
 ```
 
-The host supplies `root`, `on(event, handler)`, `sound`, timer helpers and per-widget `storage`. Supported events are `chat`, `follow`, `sub`, `raid` and `redeem`. The API is intentionally small. Widgets run in sandboxed frames with network access blocked by CSP. Treat every event value as untrusted text and render it with DOM text APIs.
+The host supplies `root`, `on(event, handler)`, `sound`, timer helpers and per-widget `storage`. Supported events are `chat`, `follow`, `sub`, `raid` and `redeem`. `sound.play(cue)` uses a short synthesized WebAudio tone; browsers may require an earlier user interaction before audio plays. The API is intentionally small. Widgets run in sandboxed frames with network access blocked by CSP. Treat every event value as untrusted text and render it with DOM text APIs.

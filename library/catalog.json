@@ -1,0 +1,8 @@
+[
+  { "id": "prediction-scoreboard", "widgetId": "prediction-scoreboard", "title": "Prediction Scoreboard", "description": "Let chat vote for option A or B.", "originalPrompt": "Build a polished prediction scoreboard. Chat votes with !a and !b, one vote per account.", "creator": "StreamForge" },
+  { "id": "boss-bar", "widgetId": "boss-bar", "title": "Chat Boss Bar", "description": "Chat attacks and heals a shared boss.", "originalPrompt": "Build a boss health bar. !attack damages the boss, !heal restores health, and the bar resets at zero or full.", "creator": "StreamForge" },
+  { "id": "goal-bar", "widgetId": "goal-bar", "title": "Follow & Sub Goals", "description": "Track follower and subscriber progress live.", "originalPrompt": "Build follower and subscriber progress bars that respond to follow and sub events.", "creator": "StreamForge" },
+  { "id": "chat-poll", "widgetId": "chat-poll", "title": "Live Chat Poll", "description": "Run a quick A/B vote with chat commands.", "originalPrompt": "Build a live chat poll. !vote a and !vote b cast one vote per account; !poll reset starts again.", "creator": "StreamForge" },
+  { "id": "screen-effects", "widgetId": "screen-effects", "title": "Celebration Effects", "description": "Celebrate follows, subscriptions and raids with effects and sound.", "originalPrompt": "Build colorful celebration effects for follow, subscription and raid events with synthesized sound.", "creator": "StreamForge" },
+  { "id": "countdown-timer", "widgetId": "countdown-timer", "title": "Chat Countdown", "description": "A stream timer that chat can extend.", "originalPrompt": "Build a countdown timer. Chat can add ten seconds with !extend 10.", "creator": "StreamForge" }
+]
