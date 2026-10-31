@@ -149,3 +149,9 @@
 - A persisted global cooldown, per-session success cap, one in-flight request, live-channel check and no-retry rate-limit handling guard all triggers. The UI shows authorization, channel status, cap and Twitch review link; error output stays generic and safe.
 - Verified with fake endpoint tests (`npm run test:twitch-clips`), existing clips API test, OAuth scope tests, session tests, TypeScript, JS syntax, whitespace and `OPEN_BROWSER=false npm run qa:ui` (8 pages × 4 sizes plus overlay, zero findings). No Twitch calls were made.
 - Next: R10 confirm launch/restart behavior and ensure all test entry points stay in mock mode.
+
+### Real integration step 10: startup and restart
+
+- Done: `npm start` builds and starts the dashboard, macOS launch targets Google Chrome, `OPEN_BROWSER=false` suppresses launch, and `npm run restart` relaunches the local server. Port conflicts now share a one-shot HTTP/WebSocket error handler and exit with one clear line rather than an unhandled `ws` stack trace.
+- Added an isolated startup smoke check that launches the mock server with Twitch and browser launch forced off, then checks the dashboard-ready message and the busy-port exit. `npm run test:startup`, TypeScript, restart/startup script syntax, `git diff --check`, and final `OPEN_BROWSER=false npm run qa:ui` pass (8 pages × 4 sizes and overlay, zero findings). No real Twitch or Codex traffic occurred.
+- Part 2 R1–R10 is complete. Next: Part 3 Phase 4B stages 2–6, starting with the Overview stage 2 spec.

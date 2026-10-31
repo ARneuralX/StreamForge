@@ -1018,13 +1018,18 @@ function publish(payload: unknown): void {
 setInterval(()=>publishHype(),1000).unref();
 setInterval(()=>{void sessions.autoEnd(Number(store.settings.sessionAutoEndMinutes)||0).then((ended)=>{if(ended)publish({type:"session",action:"auto-end"});}).catch(()=>{});},60_000).unref();
 
-http.on("error", (error: NodeJS.ErrnoException) => {
+let listenErrorHandled = false;
+function handleListenError(error: NodeJS.ErrnoException): void {
+  if (listenErrorHandled) return;
+  listenErrorHandled = true;
   if (error.code === "EADDRINUSE") {
     process.stderr.write(`Port ${port} is already in use. Stop the other server or set PORT to a free port.\n`);
     process.exit(1);
   }
   throw error;
-});
+}
+http.on("error", handleListenError);
+wss.on("error", handleListenError);
 http.listen(port, () => {
   const url = `http://localhost:${port}/dashboard/`;
   process.stdout.write(`StreamForge is ready at ${url}\n`);
