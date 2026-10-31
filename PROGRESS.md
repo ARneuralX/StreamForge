@@ -12,6 +12,7 @@
 - Phase 2A stage 5 done: Undo/Rollback controls query per-widget Git history; rollback restores the previous source only after safety checks and commits the restore. A mods-only `undo <slug>` chat command uses the same handler. Verified the no-history response and disabled control; the success path needs a second-version integration test.
 - Phase 2A stage 6 done: a natural 20 adds a visible animated fireworks burst and sparkle cue. `npm run test:widgets` scans and mock-mounts every starter widget and deterministically asserts the fireworks state.
 - Phase 2A complete: all six stages are committed. Final Chrome smoke rendered Overview, Build queue, Widgets, Library and Settings at the mock server. `npx tsc --noEmit` and `npm run test:widgets` passed.
-- Next: read `phase2b-prompt.md` and start Phase 2B.
+- Phase 2B stage 1 done: `!remix <widget name or id> <change>` and dashboard Remix forms create requests in the same queue. The mock runner starts from the current widget source, edits only that widget folder, scans/mounts the draft, and commits the accepted version. Friendly widget titles and slugs are visible; the overlay carries the remix hint. No real Codex build was run.
+- Next: audit the starter widgets and build the requested six-widget library pack.
 - Known issues: Twitch OAuth callback/token exchange and automatic Twitch connections are not implemented. Real Codex builds remain disabled for this run. Mock pipeline builds a fixed safe fixture and does not interpret requests into custom source. Successful multi-version Undo still needs an integration run.
 - Unverified: Chrome emitted macOS headless display warnings; no full browser console audit has been run. No real Twitch traffic or real Codex build was run.

@@ -46,3 +46,5 @@ The Widgets page shows version counts and Undo / Rollback controls. Undo is enab
 The dice widget displays an animated fireworks burst and a sparkle sound cue for a natural 20. Verify this locally with `npm run test:widgets`; the check controls the roll result and confirms the effect is present.
 
 Phase 2A verification: `npx tsc --noEmit` and `npm run test:widgets` passed. Isolated checks covered persistence across restart, request redaction, one-vote-per-user, vote/time/channel-point approval, feed stages and safety flags. Headless Chrome rendered all five dashboard pages and the 1920 × 1080 overlay.
+
+Remix requests use `!remix <widget name or id> <change>` in chat or the Remix form on the Widgets page. They join the ordinary queue and use its voting and approval rules. In this run, approval applies a fixed safe mock source update based on the existing widget; it does not invoke Codex or interpret the requested change into custom code. The prior Git version remains available for Undo.

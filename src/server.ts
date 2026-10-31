@@ -11,9 +11,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import { checkWidgetSource } from "./security/widget-checks.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
-type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string };
+type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
 type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean };
-type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; settings: Record<string, unknown>; codexVerification?: { time: string; ok: boolean; error?: string } };
+type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string };
+type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; codexVerification?: { time: string; ok: boolean; error?: string } };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicRoot = path.join(root, "public");
@@ -51,12 +52,14 @@ const starterWidgets: WidgetMeta[] = [
   { id: "screen-effects", title: "Celebration Effects", description: "Celebrate follows, subs and raids.", width: 420, height: 260, x: 0, y: 0, anchor: "center", enabled: true },
   { id: "welcome-banner", title: "Welcome Banner", description: "A friendly message for new followers.", width: 460, height: 110, x: 0, y: 0, anchor: "bottom-right", enabled: true },
 ];
-const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0 } };
+const librarySeed: LibraryEntry[] = starterWidgets.map((widget) => ({ id: widget.id, widgetId: widget.id, title: widget.title, description: widget.description, originalPrompt: `Create a polished ${widget.title.toLowerCase()} overlay using only the StreamForge Widget API.`, creator: "StreamForge" }));
+const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0 } };
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
 catch { store = defaultStore; }
 if (!Array.isArray(store.widgets) || store.widgets.length === 0) store.widgets = starterWidgets;
 if (!Array.isArray(store.requestHistory)) store.requestHistory = [...store.requests];
+if (!Array.isArray(store.library)) store.library = librarySeed;
 store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
 
 async function persist(): Promise<void> {
@@ -74,7 +77,13 @@ function redactDisplay(value: string): string {
     .replace(/@[A-Za-z0-9_-]{2,}/gu, "@viewer");
 }
 function publicRequest(request: Request): Request {
-  return { ...request, text: redactDisplay(request.text), requester: redactDisplay(request.requester), voterIds: undefined };
+  const widget = request.widgetId ? store.widgets.find((item) => item.id === request.widgetId) : undefined;
+  const text = request.kind === "remix" ? `Remix ${widget?.title || "widget"}: ${request.text}` : request.text;
+  return { ...request, text: redactDisplay(text), requester: redactDisplay(request.requester), voterIds: undefined };
+}
+function resolveWidgetName(name: string): WidgetMeta | undefined {
+  const normalized = name.trim().toLocaleLowerCase();
+  return store.widgets.find((widget) => widget.id.toLocaleLowerCase() === normalized || widget.title.toLocaleLowerCase() === normalized || widget.title.toLocaleLowerCase().replace(/\s+/gu, "-") === normalized);
 }
 async function widgetCommitHistory(widgetId: string): Promise<string[]> {
   if (!/^[a-z0-9-]{1,80}$/u.test(widgetId) || widgetRoot !== path.join(root, "widgets")) return [];
@@ -110,6 +119,7 @@ app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
   res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, settings: store.settings, codexVerification: store.codexVerification });
 });
+app.get("/api/library", (_req, res) => res.json(store.library));
 app.post("/api/codex/verify", async (_req, res) => {
   const workingDirectory = await mkdtemp(path.join(os.tmpdir(), "streamforge-verify-"));
   const outputPath = path.join(workingDirectory, "verification.txt");
@@ -142,8 +152,8 @@ function setState(request: Request, next: BuildState): void {
 function buildFeed(request: Request, stage: string, detail: string, checks?: unknown): void {
   publish({ type: "buildFeed", request: publicRequest(request), stage, detail, checks, at: new Date().toISOString() });
 }
-async function createRequest(text: string, requester: string, source: string): Promise<Request> {
-  const request: Request = { id: randomUUID(), text, requester, source, status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [] };
+async function createRequest(text: string, requester: string, source: string, kind: "build" | "remix" = "build", widgetId?: string): Promise<Request> {
+  const request: Request = { id: randomUUID(), text, requester, source, status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [], kind, widgetId };
   store.requests.unshift(request); store.requestHistory.unshift({ ...request });
   await persist(); publish({ type: "request", request: publicRequest(request) });
   buildFeed(request, "Received", "Request added to the queue");
@@ -155,34 +165,48 @@ async function mockBuild(request: Request): Promise<void> {
     request.failure = "Real Codex builds are disabled during this development run.";
     setState(request, "failed"); buildFeed(request, "Rolled back", request.failure); await persist(); return;
   }
-  let source = ""; let widgetId = ""; let promotedPath = ""; let draftDir = "";
+  let source = ""; let widgetId = ""; let draftDir = ""; let originalSource = "";
+  const isRemix = request.kind === "remix";
   try {
     buildFeed(request, "Approved", "Request approved for the mock runner");
-    setState(request, "building"); buildFeed(request, "Planning", "Preparing an isolated mock widget"); await persist();
-    source = `export default {\n  meta: { title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right" },\n  mount(api) {\n    const card = document.createElement("section");\n    card.textContent = "Community widget ready";\n    api.root.append(card);\n    api.on("chat", (event) => { if (String(event.message || "").trim()) card.textContent = "Chat is part of this widget"; });\n  },\n};\n`;
-    widgetId = `community-${request.id.slice(0, 8)}`;
+    setState(request, "building"); buildFeed(request, "Planning", isRemix ? "Using the selected widget source as the remix starting point" : "Preparing an isolated mock widget"); await persist();
+    if (isRemix) {
+      widgetId = request.widgetId || "";
+      if (!store.widgets.some((item) => item.id === widgetId) || !/^[a-z0-9-]{1,80}$/u.test(widgetId)) throw new Error("remix_widget_missing");
+      const currentPath = path.join(widgetRoot, widgetId, "index.js");
+      originalSource = await readFile(currentPath, "utf8");
+      source = originalSource.replace(/(\bdescription\s*:\s*)("[^"]*")/u, '$1"Updated by a safe mock remix"');
+      if (source === originalSource) throw new Error("remix_target_not_supported");
+    } else {
+      source = `export default {\n  meta: { title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right" },\n  mount(api) {\n    const card = document.createElement("section");\n    card.textContent = "Community widget ready";\n    api.root.append(card);\n    api.on("chat", (event) => { if (String(event.message || "").trim()) card.textContent = "Chat is part of this widget"; });\n  },\n};\n`;
+      widgetId = `community-${request.id.slice(0, 8)}`;
+    }
     draftDir = path.join(dataDir, "drafts", request.id);
     await mkdir(draftDir, { recursive: true });
     const draftPath = path.join(draftDir, "index.js");
     await writeWidgetFile(draftPath, source, { mode: 0o600 });
-    buildFeed(request, "Writing code", "A mock runner wrote a safe starter widget");
+    buildFeed(request, "Writing code", isRemix ? "Mock runner prepared a safe source update" : "A mock runner wrote a safe starter widget");
     setState(request, "checking"); buildFeed(request, "Safety checks", "Running syntax, static scan and mock mount checks"); await persist();
     const result = await checkWidgetSource(source);
     if (!result.ok) throw new Error(result.reason || "Widget check failed.");
-    await mkdir(path.join(widgetRoot, widgetId), { recursive: true });
-    promotedPath = path.join(widgetRoot, widgetId, "index.js");
+    if (!isRemix) await mkdir(path.join(widgetRoot, widgetId), { recursive: true });
+    const promotedPath = path.join(widgetRoot, widgetId, "index.js");
     const promoteTemp = `${promotedPath}.${request.id}.tmp`;
     await copyFile(draftPath, promoteTemp); await chmod(promoteTemp, 0o600); await rename(promoteTemp, promotedPath);
     if (widgetRoot === path.join(root, "widgets")) {
       execFileSync("git", ["add", "--", `widgets/${widgetId}/index.js`], { cwd: root, stdio: "ignore" });
-      execFileSync("git", ["commit", "-m", `Build mock widget ${widgetId}`], { cwd: root, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", `${isRemix ? "Remix" : "Build mock"} widget ${widgetId}`], { cwd: root, stdio: "ignore" });
     }
-    const metadata: WidgetMeta = { id: widgetId, title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right", enabled: true };
-    store.widgets.push(metadata);
+    if (!isRemix) {
+      const metadata: WidgetMeta = { id: widgetId, title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right", enabled: true };
+      store.widgets.push(metadata);
+    }
     setState(request, "live"); buildFeed(request, "Live", "Widget passed checks and is ready on the overlay", result.checks);
     await persist(); publish({ type: "widgets", widgets: store.widgets });
   } catch {
-    if (widgetId) {
+    if (isRemix && widgetId && originalSource) {
+      try { await writeWidgetFile(path.join(widgetRoot, widgetId, "index.js"), originalSource, { mode: 0o600 }); } catch { /* preserve rollback outcome */ }
+    } else if (widgetId) {
       try { await rm(path.join(widgetRoot, widgetId), { recursive: true, force: true }); } catch { /* rollback best effort */ }
       store.widgets = store.widgets.filter((widget) => widget.id !== widgetId);
     }
@@ -256,6 +280,18 @@ app.post("/api/chat", async (req, res) => {
       await createRequest(text, "Chat viewer", "chat");
     }
   }
+  const remixCommand = /^!remix\s+(.+)$/iu.exec(message);
+  if (remixCommand) {
+    const lastBuildAt = recentBuilds.get(userId) || 0;
+    if (Date.now() - lastBuildAt < 30_000) return res.status(429).json({ ok: false, reason: "Please wait before submitting another request." });
+    const body = remixCommand[1];
+    const widget = [...store.widgets].sort((a,b)=>b.title.length-a.title.length).find((item)=>body.toLocaleLowerCase().startsWith(`${item.title.toLocaleLowerCase()} `) || body.toLocaleLowerCase().startsWith(`${item.id.toLocaleLowerCase()} `));
+    if (!widget) return res.status(400).json({ ok: false, reason: "Name a widget from the current scene, followed by the requested change." });
+    const change = body.slice(body.toLocaleLowerCase().startsWith(`${widget.id.toLocaleLowerCase()} `) ? widget.id.length : widget.title.length).trim().slice(0,300);
+    if (!change || blocklist.some((rule)=>rule.test(change))) return res.status(400).json({ok:false,reason:"Enter a safe change of up to 300 characters."});
+    recentBuilds.set(userId, Date.now());
+    await createRequest(change, "Chat viewer", "chat", "remix", widget.id);
+  }
   const voteMatch = /^(?:!vote\s+(\d+)|vote\s+(\d+)|\+1)$/iu.exec(message);
   if (voteMatch) {
     const queued = store.requests.filter((item) => item.status === "queued").sort((a, b) => (b.votes || 0) - (a.votes || 0) || a.createdAt.localeCompare(b.createdAt));
@@ -293,6 +329,15 @@ app.post("/api/widgets/:id/undo", async (req, res) => {
   const result = await undoWidget(req.params.id);
   if (!result.ok) return res.status(409).json({ error: result.reason });
   res.json({ ok: true, message: "Previous widget version restored." });
+});
+app.post("/api/widgets/:id/remix", async (req, res) => {
+  const widget = resolveWidgetName(req.params.id);
+  const change = typeof req.body?.change === "string" ? req.body.change.trim().slice(0,300) : "";
+  if (!widget) return res.status(404).json({error:"Widget not found."});
+  if (!change) return res.status(400).json({error:"Describe the change to request."});
+  if (blocklist.some((rule)=>rule.test(change))) return res.status(400).json({error:"That change needs manual moderator review."});
+  const request=await createRequest(change,"Dashboard","dashboard","remix",widget.id);
+  res.status(201).json(publicRequest(request));
 });
 app.patch("/api/settings", async (req, res) => {
   const approval = req.body?.approval;
