@@ -76,3 +76,10 @@
   - **Missing:** Twitch OAuth code exchange and validation; durable/refreshable token and disconnect; live IRC and EventSub; exact operational setup checklist/status states; real Codex build runner and SDK event stream; real Verify Codex persistence semantics (the route exists but no integration); real build recordings/replay; Get Streams and Create Clip; the continuation's fake SDK/server integration test coverage. Auto-Clips is correctly default-off.
   - **Phase 4B outstanding:** reproduce and record defect root causes, recover Overview, demonstrate/fix all theme token usage, unify/test backgrounds, audit Library iframe/event/health/idempotency behavior, run final regression and update docs.
 - Next: Part 1 recover-check uncommitted work, then Part 2 real integrations using only fake SDK/server tests, followed by Phase 4B stages 2–6. Never start Phase 5.
+
+## Continuation Part 1: Phase 4B stage 2 recovery
+
+- The continuation described uncommitted `overview.js`, `demo.js`, and diagnostic scripts, but repository history had already placed the Overview rewrite in commit `0ae513d`; the only untracked file is the provided `CODEX-CONTINUE.md`, which remains unstaged. Both diagnostic scripts are present and intentionally kept for root-cause work.
+- Recovered the Overview parse error in the committed rewrite by moving its contrast text formatting into a small helper. Reproduction was `node --check public/dashboard/pages/overview.js`, which failed on the malformed nested template literal.
+- The first `qa:ui` run rendered the page but reported horizontal overflow on Overview at all four viewports. Root cause: the recap canvas retained its 1920px intrinsic width with no responsive CSS. Added a 100%-width, auto-height rule. Follow-up `node --check` and `OPEN_BROWSER=false npm run qa:ui` passed: 8 pages × 4 viewports, overlay 1920×1080, zero diagnostics, failed requests, layout or accessibility findings.
+- Next: Part 2 R1 env and configuration, then R2–R10 integrations with fake-only tests.
