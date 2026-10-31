@@ -1,3 +1,5 @@
+import { computeLayout } from "/overlay/layout.js";
+
 const params = new URLSearchParams(location.search);
 const bg = params.get("bg");
 const backgrounds = { dark: "#17151f", bright: "#f5f5f5", green: "#00ff00", transparent: "transparent" };
@@ -6,16 +8,32 @@ else if (backgrounds[bg]) document.body.style.background = backgrounds[bg];
 if (params.has("feed")) document.querySelector("#feed").hidden = false;
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 let frames = new Map();
+let layoutItems = [];
+function positionFrames() {
+  const scale = Math.min(innerWidth / 1920, innerHeight / 1080);
+  for (const position of computeLayout(layoutItems)) {
+    const frame = frames.get(position.id); if (!frame) continue;
+    frame.style.left = `${position.x * scale}px`; frame.style.top = `${position.y * scale}px`;
+    frame.style.width = `${position.width * scale}px`; frame.style.height = `${position.height * scale}px`;
+  }
+}
 async function load() {
   const data = await (await fetch("/api/state")).json();
   const region = document.querySelector("#widgets"); region.replaceChildren(); frames = new Map();
-  for (const widget of data.widgets.filter((item)=>item.enabled)) {
+  layoutItems = data.widgets.filter((item)=>item.enabled);
+  for (const widget of layoutItems) {
     const frame = document.createElement("iframe");
-    frame.className = "widget-frame"; frame.title = widget.title; frame.width = String(widget.width); frame.height = String(widget.height);
+    frame.className = "widget-frame"; frame.title = widget.title;
     frame.setAttribute("sandbox", "allow-scripts"); frame.src = `/widgets/frame.html?id=${encodeURIComponent(widget.id)}`;
     region.append(frame); frames.set(widget.id, frame);
   }
+  positionFrames();
+  const queued = data.requests.filter((item)=>item.status === "queued").sort((a,b)=>(b.votes||0)-(a.votes||0)).slice(0,3);
+  const card=document.querySelector("#up-next");card.hidden=queued.length===0;
+  document.querySelector("#up-next-list").innerHTML=queued.map((item)=>`<li>${escapeText(item.text)} <b>· ${item.votes||0} votes</b></li>`).join("");
 }
+function escapeText(value) { const element=document.createElement("span");element.textContent=String(value);return element.innerHTML; }
+addEventListener("resize", positionFrames);
 load();
 socket.addEventListener("message", (event) => {
   let message; try { message = JSON.parse(event.data); } catch { return; }
@@ -26,4 +44,12 @@ socket.addEventListener("message", (event) => {
   if (message.type === "event" && document.querySelector("#feed").hidden === false) {
     const item=document.createElement("div");item.className="feed-item";item.textContent=`SIMULATED · ${message.event.type} event received`;document.querySelector("#feed-items").prepend(item);
   }
+  if (message.type === "buildFeed" && document.querySelector("#feed").hidden === false) {
+    const labels={Received:10,Approved:20,Planning:35,"Writing code":55,"Safety checks":80,Live:100,"Rolled back":100};
+    const item=document.createElement("div");item.className="feed-item";
+    const elapsed=Math.max(0,Math.floor((Date.now()-Date.parse(message.request.createdAt))/1000));
+    item.innerHTML=`<strong>${escapeText(message.request.text)}</strong><br><span>${escapeText(message.request.requester)} · ${escapeText(message.stage)} · ${elapsed}s</span><div>${escapeText(message.detail)}</div><div class="progress"><i style="width:${labels[message.stage]||15}%"></i></div>`;
+    document.querySelector("#feed-items").prepend(item);
+  }
+  if (message.type === "request" || message.type === "queue") load();
 });
