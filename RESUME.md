@@ -21,9 +21,15 @@
 - Verification: `npx tsc --noEmit`, all existing test scripts, `npm run check:library`, `npm run qa:phase3`, and `npm run qa:ui` passed. The Library check mounted 10 previews, delivered 16 Passport events, and verified concurrent Add/Remove/Import, duplicate-import messaging, Export and preview backgrounds. UI QA covered 8 pages × 4 existing viewports plus overlay with 0 browser diagnostics, failed requests, or layout/accessibility findings. Checks used mock mode, fake endpoints and isolated local data; no live Twitch traffic or real Codex build.
 - Commit/tag: `UI stage 5: widgets and library`; `ui-s5`.
 
+## Stage 6 — Other pages
+
+- Done: grouped Settings controls, switch styling, five existing widget-theme swatches, an unsaved-changes status bar connected to existing approval and clip save actions, and clearer setup descriptions. Scenes show compact widget previews; session controls/history are grouped and the recap canvas is centred with portrait/landscape selection plus Download and Copy actions. Demo Director steps now form an accessible timeline with one active step at a time.
+- Preserved existing page IDs, API routes, session/scene actions and exports. Theme swatches use the existing widget theme API; no new app theme system or server behavior was added.
+- Verification: `npx tsc --noEmit`, all existing test scripts, `npm run check:library`, `npm run qa:phase3`, `npm run test:preview-backgrounds`, and `npm run qa:ui` passed. UI QA covered 8 pages × 4 viewports plus overlay with 0 browser diagnostics, failed requests, or layout/accessibility findings. Checks used mock/replay and isolated data; no live Twitch traffic or real Codex build.
+- Commit/tag: `UI stage 6: other pages`; `ui-s6`.
+
 ## Next
 
-- Stage 6: Settings, Scenes, Sessions and Demo Director presentation.
 - Stage 7: reserve overlay HUD space and prevent widget collisions.
 - Stage 8: UI smoke, expanded QA, screenshots, documentation and regression.
 

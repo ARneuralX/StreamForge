@@ -26,7 +26,7 @@ export async function library(root, state, refresh) {
     const widgetId = frame.dataset.widgetId;
     const badge = root.querySelector(`[data-preview-health="${cssEscape(widgetId)}"]`);
     activePreviews.set(widgetId, { widgetId, badge, frame });
-    setPreviewFrameBackground(frame, previewBackground);
+    applyFrameBackground(frame, previewBackground);
     frame.addEventListener("load", () => {
       if (frame.dataset.paused === "true" || frame.src === "about:blank") return;
       setHealth(badge, "Starting", "starting");
@@ -53,7 +53,7 @@ export async function library(root, state, refresh) {
     savePreviewBackground("library", event.target.value);
     frames.forEach((frame) => {
       frame.dataset.previewSrc = withPreviewBackground(`/widgets/frame.html?id=${encodeURIComponent(frame.dataset.widgetId)}`, event.target.value);
-      setPreviewFrameBackground(frame, event.target.value);
+      applyFrameBackground(frame, event.target.value);
       if (frame.dataset.paused !== "true") frame.src = frame.dataset.previewSrc;
     });
   };
@@ -121,6 +121,7 @@ function categorize(entry) {
   return "utility";
 }
 function setHealth(badge, text, state) { if (badge) { badge.textContent = text; badge.dataset.state = state; if (state === "mounted") badge.closest(".library-preview-shell")?.classList.add("preview-loaded"); } }
+function applyFrameBackground(frame, name) { setPreviewFrameBackground(frame, name); const shell = frame.parentElement; if (shell) { shell.style.backgroundColor = frame.style.backgroundColor; shell.style.backgroundImage = frame.style.backgroundImage; shell.style.backgroundSize = frame.style.backgroundSize; } }
 function pausePreview(frame, preview) { if (frame.dataset.started !== "true" || frame.dataset.paused === "true") return; frame.dataset.paused = "true"; frame.style.contentVisibility = "hidden"; setHealth(preview.badge, "Paused offscreen", "paused"); }
 function resumePreview(frame, preview) { if (frame.dataset.paused === "true") { frame.dataset.paused = "false"; frame.style.contentVisibility = "visible"; setHealth(preview.badge, "Preview loading", "loading"); } frame.dataset.started = "true"; }
 function backgroundOptions(selected) { return ["dark", "bright", "checker", "green", "transparent"].map((name) => `<option value="${name}" ${selected === name ? "selected" : ""}>${name[0].toUpperCase()}${name.slice(1)}</option>`).join(""); }

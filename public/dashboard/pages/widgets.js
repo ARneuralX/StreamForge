@@ -25,7 +25,7 @@ export async function widgets(root, state, refresh = async () => {}) {
     const widgetId = frame.dataset.widgetId;
     const badge = root.querySelector(`[data-widget-health="${cssEscape(widgetId)}"]`);
     previews.set(widgetId, { frame, badge });
-    setPreviewFrameBackground(frame, background);
+    applyFrameBackground(frame, background);
     frame.addEventListener("load", () => {
       if (frame.dataset.paused === "true") return;
       if (frame.src.includes("about:blank")) return;
@@ -53,7 +53,7 @@ export async function widgets(root, state, refresh = async () => {}) {
     savePreviewBackground("widgets", event.target.value);
     root.querySelectorAll(".widget-preview-frame").forEach((frame) => {
       frame.dataset.previewSrc = withPreviewBackground(`/widgets/frame.html?id=${encodeURIComponent(frame.dataset.widgetId)}`, event.target.value);
-      setPreviewFrameBackground(frame, event.target.value);
+      applyFrameBackground(frame, event.target.value);
       if (frame.dataset.paused !== "true") frame.src = frame.dataset.previewSrc;
     });
   };
@@ -150,6 +150,7 @@ function setPreviewHealth(preview, text, state) {
   preview.badge.dataset.state = state;
   if (state === "mounted" || state === "error") preview.badge.closest(".widget-preview-shell")?.classList.add("preview-loaded");
 }
+function applyFrameBackground(frame, name) { setPreviewFrameBackground(frame, name); const stage = frame.parentElement; if (stage) { stage.style.backgroundColor = frame.style.backgroundColor; stage.style.backgroundImage = frame.style.backgroundImage; stage.style.backgroundSize = frame.style.backgroundSize; } }
 function pausePreview(frame, preview) {
   if (frame.dataset.started !== "true" || frame.dataset.paused === "true") return;
   frame.dataset.paused = "true";
