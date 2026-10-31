@@ -4,8 +4,9 @@ import { widgets } from "./pages/widgets.js";
 import { library } from "./pages/library.js";
 import { settings } from "./pages/settings.js";
 import { sessions } from "./pages/sessions.js";
+import { scenes } from "./pages/scenes.js";
 
-const pages = { overview, queue, widgets, library, settings, sessions };
+const pages = { overview, queue, widgets, library, settings, sessions, scenes };
 const root = document.querySelector("#page");
 const links = [...document.querySelectorAll("[data-page]")];
 let state = { requests: [], widgets: [], settings: {} };

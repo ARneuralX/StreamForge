@@ -14,6 +14,7 @@ let layoutItems = [];
 let themeTokens;
 let overlayHypeMeter=false;
 function updateHype(hype){for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:hype",hype},"*");if(overlayHypeMeter){document.querySelector("#hype-meter").hidden=false;document.querySelector("#hype-value").textContent=String(hype.value);document.querySelector("#hype-progress").value=hype.value;}}
+function applyScene(id,name=""){const canvas=document.querySelector("#canvas"),banner=document.querySelector("#scene-banner");canvas.dataset.scene=id||"";const titles={"starting-soon":"Starting Soon","be-right-back":"Be Right Back","hype-mode":"Hype Mode",ending:"Thanks for watching"};banner.textContent=titles[id]||name||"";banner.hidden=!banner.textContent;canvas.classList.remove("scene-transition");void canvas.offsetWidth;canvas.classList.add("scene-transition");setTimeout(()=>canvas.classList.remove("scene-transition"),750);}
 const toast = document.createElement("section");
 toast.className = "feed"; toast.hidden = true; toast.setAttribute("role", "alert"); document.querySelector("#canvas").append(toast);
 function positionFrames() {
@@ -29,6 +30,7 @@ async function load() {
   const data = await (await fetch("/api/state")).json();
   if(params.get("recap")==="1"){const history=await(await fetch("/api/sessions")).json();const session=history.current||history.sessions?.[0]||{requests:0,liveBuilds:0,uniqueChatters:0,hypeSeries:[],topContributors:[]};document.querySelector("#canvas").classList.add("recap-mode");document.querySelector("#recap-overlay").hidden=false;document.querySelector("#widgets").hidden=true;drawRecap(document.querySelector("#recap-canvas"),session,data.settings.themeTokens,"landscape");return;}
   themeTokens=data.settings.themeTokens;
+  document.body.dataset.safeMode=data.settings.safeMode||"off";if(data.settings.activeScene)applyScene(data.settings.activeScene);
   overlayHypeMeter=data.settings.overlayHypeMeter===true;document.querySelector("#hype-meter").hidden=!overlayHypeMeter;if(data.hype)updateHype(data.hype);
   if(!["off","reduced","minimal"].includes(params.get("safeMode")))safeModeLevel=data.settings.safeMode||"off";
   const mode=data.settings.buildMode;
@@ -60,7 +62,8 @@ socket.addEventListener("message", (event) => {
     for (const frame of frames.values()) frame.contentWindow?.postMessage({kind:"streamforge:event",event:message.event},"*");
   }
   if(message.type==="theme"){themeTokens=message.tokens;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");}
-  if(message.type==="safeMode"){safeModeLevel=message.level;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:safe-mode",level:safeModeLevel},"*");}
+  if(message.type==="safeMode"){safeModeLevel=message.level;document.body.dataset.safeMode=safeModeLevel;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:safe-mode",level:safeModeLevel},"*");}
+  if(message.type==="scene"&&message.scene)applyScene(message.scene.id,message.scene.name);
   if(message.type==="hype")updateHype(message.hype);
   if(message.type==="hypeSettings"&&message.settings){overlayHypeMeter=message.settings.overlayMeter===true;document.querySelector("#hype-meter").hidden=!overlayHypeMeter;}
   if (message.type === "widgets") load();

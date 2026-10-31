@@ -63,3 +63,5 @@ The Codex SDK Step 0 gate was run by the user. The verification task and real bu
 The Hype meter uses rolling aggregate chat and event activity with calm/warm/hot/peak levels, a trend indicator, sensitivity, manual boost, mute, and reactive-widget controls. The separate chat-energy slider is marked SIMULATED and expires after 15 seconds. It exposes no chatter names; simulated activity never contacts Twitch.
 
 Stream sessions auto-start on first activity and store aggregate JSON under ignored `data/sessions/`. The Sessions & Recap page exports themed portrait/landscape PNGs, recap JSON, and an end-of-stream overlay. Chatter names are excluded unless explicitly enabled.
+
+Scene Presets include Starting Soon, Be Right Back, Hype Mode and Ending. Built-ins are read-only; custom copies live under ignored `data/scenes.json`. Switching scenes preserves every widget record and can be undone.

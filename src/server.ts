@@ -32,6 +32,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicRoot = path.join(root, "public");
 const dataDir = path.resolve(process.env.STREAMFORGE_DATA_DIR || path.join(root, "data"));
 const widgetRoot = path.resolve(process.env.STREAMFORGE_WIDGETS_DIR || path.join(root, "widgets"));
+const scenesPath=path.join(dataDir,"scenes.json");
 
 function parseEnv(source: string): Record<string, string> {
   const values: Record<string, string> = {};
@@ -79,6 +80,13 @@ const themePresets = {
   Clean: { accent:"#a9f5dc",accent2:"#aa8aff",background:"#17151f",text:"#f6f2ff",glow:"#a9f5dc",radius:16,fontStack:"system-ui",animationSpeed:1 },
 } as const;
 type ThemeTokens = { accent:string;accent2:string;background:string;text:string;glow:string;radius:number;fontStack:string;animationSpeed:number };
+type ScenePreset={id:string;name:string;builtIn:boolean;widgetIds:string[];theme:keyof typeof themePresets;safeMode:"off"|"reduced"|"minimal";hypeSensitivity?:"low"|"normal"|"high"};
+const builtinScenes:ScenePreset[]=[
+ {id:"starting-soon",name:"Starting Soon",builtIn:true,widgetIds:["countdown-timer","welcome-banner"],theme:"Cozy",safeMode:"reduced",hypeSensitivity:"normal"},
+ {id:"be-right-back",name:"Be Right Back",builtIn:true,widgetIds:["countdown-timer","welcome-banner"],theme:"Clean",safeMode:"reduced",hypeSensitivity:"low"},
+ {id:"hype-mode",name:"Hype Mode",builtIn:true,widgetIds:["dice-roller","boss-bar","screen-effects","goal-bar"],theme:"Neon",safeMode:"off",hypeSensitivity:"high"},
+ {id:"ending",name:"Ending",builtIn:true,widgetIds:["screen-effects","goal-bar","countdown-timer"],theme:"Clean",safeMode:"minimal",hypeSensitivity:"low"},
+];
 const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, widgetStorage:{}, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0, themePreset:"Clean", themeTokens:themePresets.Clean } };
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
@@ -101,6 +109,8 @@ store.settings.includeChatterNames ??= false;
 store.settings.nonEnglishManualApproval ??= true;
 store.settings.autoClipsEnabled ??= false;
 store.settings.sessionAutoEndMinutes ??= 0;
+store.settings.activeScene ||= "";
+let userScenes:ScenePreset[]=[];try{const saved=JSON.parse(await readFile(scenesPath,"utf8"));if(Array.isArray(saved))userScenes=saved.filter((scene)=>scene&&typeof scene.id==="string"&&typeof scene.name==="string"&&scene.builtIn===false&&Array.isArray(scene.widgetIds)&&scene.widgetIds.every((id:unknown)=>typeof id==="string")&&isThemePreset(scene.theme)&&["off","reduced","minimal"].includes(scene.safeMode));}catch{/* user scenes are optional */}
 const sessions=new SessionManager(path.join(dataDir,"sessions"));await sessions.init();if(store.settings.includeChatterNames!==true)await sessions.setIncludeNames(false);
 const hypeEngine=new HypeEngine();let lastHypePublish=0;let pendingHypePublish:NodeJS.Timeout|undefined;let simulatedHypeUntil=0;let simulatedHypeEnergy=0;
 function hypeSettings():HypeSettings{return{sensitivity:(store.settings.hypeSensitivity==="low"||store.settings.hypeSensitivity==="high"?store.settings.hypeSensitivity:"normal"),manualBoost:Math.max(-50,Math.min(50,Number(store.settings.manualHypeBoost)||0)),muted:store.settings.hypeMuted===true,reactive:store.settings.hypeReactive===true,simulatedEnergy:Date.now()<simulatedHypeUntil?simulatedHypeEnergy:0};}
@@ -236,9 +246,26 @@ function validTheme(value: unknown): value is ThemeTokens {
   return Object.keys(theme).length===keys.length&&keys.every((key)=>key in theme)&&["accent","accent2","background","text","glow"].every((key)=>typeof theme[key]==="string"&&/^#[0-9a-f]{6}$/iu.test(theme[key] as string))&&Number.isFinite(theme.radius)&&Number(theme.radius)>=0&&Number(theme.radius)<=40&&Number.isFinite(theme.animationSpeed)&&Number(theme.animationSpeed)>=.5&&Number(theme.animationSpeed)<=2&&["system-ui","Arial","Georgia","Trebuchet MS"].includes(String(theme.fontStack));
 }
 function applyTheme(preset:string,tokens:ThemeTokens):void { store.settings.themePreset=preset;store.settings.themeTokens=tokens;publish({type:"theme",preset,tokens}); }
+function isThemePreset(value:unknown):value is keyof typeof themePresets{return typeof value==="string"&&Object.hasOwn(themePresets,value);}
+function sceneList():ScenePreset[]{return [...builtinScenes,...userScenes].map((scene)=>structuredClone(scene));}
+async function saveUserScenes():Promise<void>{const temp=`${scenesPath}.${randomUUID()}.tmp`;await writeFile(temp,JSON.stringify(userScenes,null,2),{mode:0o600});await chmod(temp,0o600);await rename(temp,scenesPath);}
+function findScene(idOrName:string):ScenePreset|undefined{const normalized=idOrName.trim().toLocaleLowerCase();return [...builtinScenes,...userScenes].find((scene)=>scene.id.toLocaleLowerCase()===normalized||scene.name.toLocaleLowerCase()===normalized);}
+async function switchScene(scene:ScenePreset):Promise<void>{
+  const previous={enabled:Object.fromEntries(store.widgets.map((widget)=>[widget.id,widget.enabled])),themePreset:store.settings.themePreset,themeTokens:store.settings.themeTokens,safeMode:store.settings.safeMode,hypeSensitivity:store.settings.hypeSensitivity,activeScene:store.settings.activeScene};
+  store.settings.sceneUndo=previous;for(const widget of store.widgets)widget.enabled=scene.widgetIds.includes(widget.id);
+  applyTheme(scene.theme,themePresets[scene.theme]);store.settings.safeMode=scene.safeMode;if(scene.hypeSensitivity)store.settings.hypeSensitivity=scene.hypeSensitivity;store.settings.activeScene=scene.id;
+  await persist();publish({type:"widgets",widgets:store.widgets});publish({type:"safeMode",level:scene.safeMode,motionScale:motionScales[scene.safeMode]});publish({type:"hypeSettings",settings:{sensitivity:store.settings.hypeSensitivity,manualBoost:store.settings.manualHypeBoost,muted:store.settings.hypeMuted,reactive:store.settings.hypeReactive,overlayMeter:store.settings.overlayHypeMeter}});publish({type:"scene",scene:{id:scene.id,name:scene.name,transitionMs:700}});
+}
+async function undoScene():Promise<boolean>{const snapshot=store.settings.sceneUndo as {enabled?:Record<string,boolean>;themePreset?:string;themeTokens?:ThemeTokens;safeMode?:string;hypeSensitivity?:string;activeScene?:string}|undefined;if(!snapshot?.enabled)return false;for(const widget of store.widgets)if(typeof snapshot.enabled[widget.id]==="boolean")widget.enabled=snapshot.enabled[widget.id];if(isThemePreset(snapshot.themePreset)&&validTheme(snapshot.themeTokens))applyTheme(snapshot.themePreset,snapshot.themeTokens);if(["off","reduced","minimal"].includes(String(snapshot.safeMode)))store.settings.safeMode=snapshot.safeMode;if(["low","normal","high"].includes(String(snapshot.hypeSensitivity)))store.settings.hypeSensitivity=snapshot.hypeSensitivity;store.settings.activeScene=snapshot.activeScene||"";delete store.settings.sceneUndo;await persist();publish({type:"widgets",widgets:store.widgets});const level=String(store.settings.safeMode||"off") as keyof typeof motionScales;publish({type:"safeMode",level,motionScale:motionScales[level]});publish({type:"hypeSettings",settings:{sensitivity:store.settings.hypeSensitivity,manualBoost:store.settings.manualHypeBoost,muted:store.settings.hypeMuted,reactive:store.settings.hypeReactive,overlayMeter:store.settings.overlayHypeMeter}});publish({type:"scene",scene:{id:store.settings.activeScene,name:findScene(String(store.settings.activeScene||""))?.name||"",transitionMs:700}});return true;}
+app.get("/api/scenes",(_req,res)=>res.json({scenes:sceneList(),activeScene:store.settings.activeScene||"",canUndo:Boolean(store.settings.sceneUndo)}));
+app.post("/api/scenes/:id/apply",async(req,res)=>{const scene=findScene(req.params.id);if(!scene)return res.status(404).json({error:"Scene preset not found."});await switchScene(scene);res.json({ok:true,scene,widgets:store.widgets,transitionMs:700});});
+app.post("/api/scenes/undo",async(_req,res)=>{if(!await undoScene())return res.status(409).json({error:"There is no scene switch to undo."});res.json({ok:true,widgets:store.widgets,activeScene:store.settings.activeScene});});
+app.post("/api/scenes/duplicate",async(req,res)=>{const source=findScene(typeof req.body?.sourceId==="string"?req.body.sourceId:"");const name=typeof req.body?.name==="string"?req.body.name.replace(/[\u0000-\u001f\u007f]/gu,"").trim().slice(0,40):"";if(!source)return res.status(404).json({error:"Choose a built-in or saved scene to duplicate."});if(!name)return res.status(400).json({error:"Enter a name for the duplicated scene."});const id=`${name.toLocaleLowerCase().replace(/[^a-z0-9]+/gu,"-").replace(/^-|-$/gu,"").slice(0,40)||"scene"}-${randomUUID().slice(0,6)}`;const scene:ScenePreset={...structuredClone(source),id,name,builtIn:false};userScenes.push(scene);await saveUserScenes();res.status(201).json(scene);});
+app.patch("/api/scenes/:id",async(req,res)=>{const scene=userScenes.find((item)=>item.id===req.params.id);if(!scene)return res.status(403).json({error:"Built-in scenes are read-only. Duplicate a scene before editing."});const name=typeof req.body?.name==="string"?req.body.name.replace(/[\u0000-\u001f\u007f]/gu,"").trim().slice(0,40):scene.name;const widgetIds=req.body?.widgetIds;const theme=req.body?.theme;const safeMode=req.body?.safeMode;const sensitivity=req.body?.hypeSensitivity===""?undefined:req.body?.hypeSensitivity;if(!name||!Array.isArray(widgetIds)||widgetIds.length>100||!widgetIds.every((id:unknown)=>typeof id==="string"&&store.widgets.some((widget)=>widget.id===id)))return res.status(400).json({error:"Name the scene and choose existing widgets."});if(!isThemePreset(theme)||!["off","reduced","minimal"].includes(safeMode))return res.status(400).json({error:"Choose a theme and Safe Mode level."});if(sensitivity!==undefined&&!(["low","normal","high"].includes(sensitivity)))return res.status(400).json({error:"Hype sensitivity must be low, normal or high."});scene.name=name;scene.widgetIds=[...new Set(widgetIds)];scene.theme=theme;scene.safeMode=safeMode;scene.hypeSensitivity=sensitivity;await saveUserScenes();res.json(scene);});
+app.delete("/api/scenes/:id",async(req,res)=>{const index=userScenes.findIndex((scene)=>scene.id===req.params.id);if(index<0)return res.status(403).json({error:"Built-in scenes cannot be deleted."});const [removed]=userScenes.splice(index,1);if(store.settings.activeScene===removed.id)store.settings.activeScene="";await saveUserScenes();await persist();res.json({ok:true});});
 app.patch("/api/theme", async (req,res)=>{
   const preset=typeof req.body?.preset==="string"?req.body.preset:"";
-  if(!(preset in themePresets))return res.status(400).json({error:"Choose Halloween, Neon, Cozy, Retro or Clean."});
+  if(!isThemePreset(preset))return res.status(400).json({error:"Choose Halloween, Neon, Cozy, Retro or Clean."});
   const tokens=req.body?.tokens===undefined?themePresets[preset as keyof typeof themePresets]:req.body.tokens;
   if(!validTheme(tokens))return res.status(400).json({error:"Theme tokens are invalid. Use safe hex colors, bounded values and an approved system font."});
   applyTheme(preset,tokens);await persist();res.json({ok:true,preset,tokens});
@@ -534,6 +561,7 @@ app.post("/api/chat", async (req, res) => {
   if(themeMatch&&req.body?.isMod===true){const preset=Object.keys(themePresets).find((name)=>name.toLowerCase()===themeMatch[1].toLowerCase())!;applyTheme(preset,themePresets[preset as keyof typeof themePresets]);await persist();}
   const safeModeMatch=/^!safe-mode\s+(off|reduced|minimal)$/iu.exec(message);
   if(safeModeMatch&&req.body?.isMod===true){const level=safeModeMatch[1].toLowerCase() as keyof typeof motionScales;store.settings.safeMode=level;await persist();publish({type:"safeMode",level,motionScale:motionScales[level]});}
+  const sceneMatch=/^!?scene\s+(.+)$/iu.exec(message);if(sceneMatch&&req.body?.isMod===true){const scene=findScene(sceneMatch[1]);if(scene)await switchScene(scene);else publish({type:"moderation",message:"Scene not found. Check the saved scene names."});}
   res.json({ ok: true });
 });
 app.post("/api/requests/:id/:action", async (req, res) => {
