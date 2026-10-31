@@ -99,8 +99,8 @@ store.settings.overlayHypeMeter ??= false;
 store.settings.includeChatterNames ??= false;
 store.settings.nonEnglishManualApproval ??= true;
 store.settings.autoClipsEnabled ??= false;
-const hypeEngine=new HypeEngine();let lastHypePublish=0;let pendingHypePublish:NodeJS.Timeout|undefined;
-function hypeSettings():HypeSettings{return{sensitivity:(store.settings.hypeSensitivity==="low"||store.settings.hypeSensitivity==="high"?store.settings.hypeSensitivity:"normal"),manualBoost:Math.max(-50,Math.min(50,Number(store.settings.manualHypeBoost)||0)),muted:store.settings.hypeMuted===true,reactive:store.settings.hypeReactive===true};}
+const hypeEngine=new HypeEngine();let lastHypePublish=0;let pendingHypePublish:NodeJS.Timeout|undefined;let simulatedHypeUntil=0;let simulatedHypeEnergy=0;
+function hypeSettings():HypeSettings{return{sensitivity:(store.settings.hypeSensitivity==="low"||store.settings.hypeSensitivity==="high"?store.settings.hypeSensitivity:"normal"),manualBoost:Math.max(-50,Math.min(50,Number(store.settings.manualHypeBoost)||0)),muted:store.settings.hypeMuted===true,reactive:store.settings.hypeReactive===true,simulatedEnergy:Date.now()<simulatedHypeUntil?simulatedHypeEnergy:0};}
 function hypeSnapshot(){return hypeEngine.snapshot(hypeSettings());}
 function publishHype():void{const wait=Math.max(0,250-(Date.now()-lastHypePublish));if(wait){if(!pendingHypePublish)pendingHypePublish=setTimeout(()=>{pendingHypePublish=undefined;lastHypePublish=Date.now();publish({type:"hype",hype:hypeSnapshot()});},wait);return;}lastHypePublish=Date.now();publish({type:"hype",hype:hypeSnapshot()});}
 
@@ -188,6 +188,7 @@ app.get("/api/state", async (_req, res) => {
   res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, themeContrast, hype:hypeSnapshot(), codexVerification: store.codexVerification });
 });
 app.get("/api/hype",(_req,res)=>res.json(hypeSnapshot()));
+app.post("/api/hype/simulate",(req,res)=>{const energy=Number(req.body?.energy);if(!Number.isInteger(energy)||energy<0||energy>100)return res.status(400).json({error:"Simulated chat energy must be an integer from 0 to 100."});simulatedHypeEnergy=energy;simulatedHypeUntil=Date.now()+15_000;publishHype();res.json({ok:true,simulated:true,expiresAt:new Date(simulatedHypeUntil).toISOString(),hype:hypeSnapshot()});});
 app.patch("/api/hype/settings",async(req,res)=>{
   const sensitivity=req.body?.sensitivity;const manualBoost=req.body?.manualBoost;const muted=req.body?.muted;const reactive=req.body?.reactive;const overlayMeter=req.body?.overlayMeter;
   if(sensitivity!==undefined&&!["low","normal","high"].includes(sensitivity))return res.status(400).json({error:"Choose low, normal or high sensitivity."});
@@ -470,7 +471,7 @@ app.post("/api/chat", async (req, res) => {
   const login = typeof req.body?.login === "string" ? req.body.login.slice(0, 40) : "";
   if (!message || !userId || req.body?.isBot === true || /(?:bot|nightbot|streamelements|moobot)$/iu.test(login)) return res.json({ ok: true, ignored: true });
   const anonymousPlayer=`Player ${createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex").slice(0,5)}`;
-  hypeEngine.addChat(createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex"),message);publishHype();
+  const emoteCount=Number.isInteger(req.body?.emoteCount)&&req.body.emoteCount>=0?Math.min(200,req.body.emoteCount):undefined;hypeEngine.addChat(createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex"),message,Date.now(),emoteCount);publishHype();
   publish({ type: "event", event: { type: "chat", payload: { message: redactDisplay(message), user: anonymousPlayer, isMod:req.body?.isMod===true }, simulated: req.body?.simulated === true, at: new Date().toISOString() } });
   const buildMatch = /^!build\s+(.+)$/iu.exec(message);
   if (buildMatch) {
@@ -577,7 +578,7 @@ app.post("/api/simulate/:event", (req, res) => {
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
   const eventType = req.params.event;
   if(eventType==="chat"){const commands=Array.isArray(req.body?.commands)?req.body.commands.slice(0,10).map(String):[String(req.body?.message||"")];for(const message of commands)hypeEngine.addChat("simulated-viewer",message);publishHype();}
-  else{hypeEngine.addEvent(eventType);publishHype();}
+  else{hypeEngine.addEvent(eventType,Date.now(),Number(req.body?.viewers)||0);publishHype();}
   if (eventType === "chat" && Array.isArray(req.body?.commands)) {
     for (const message of req.body.commands.slice(0,10)) publish({type:"event",event:{type:"chat",payload:{message:String(message).slice(0,100),user:"Player abc12",isMod:true},simulated:true,at:new Date().toISOString()}});
   } else {

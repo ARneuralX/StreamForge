@@ -60,4 +60,4 @@ Run `npx tsc --noEmit`, `npm run test:widgets`, and `npm run test:templates`. To
 
 The Codex SDK Step 0 gate was run by the user. The verification task and real build button were not exercised during development.
 
-The Hype meter uses rolling aggregate chat and event activity, with sensitivity, manual boost, mute and reactive-widget controls. It exposes no chatter names; simulated activity never contacts Twitch.
+The Hype meter uses rolling aggregate chat and event activity with calm/warm/hot/peak levels, a trend indicator, sensitivity, manual boost, mute, and reactive-widget controls. The separate chat-energy slider is marked SIMULATED and expires after 15 seconds. It exposes no chatter names; simulated activity never contacts Twitch.

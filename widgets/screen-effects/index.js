@@ -5,7 +5,7 @@ export default {
     const message = document.createElement("p"); message.textContent = "The next celebration starts here";
     const effect = document.createElement("div"); effect.className = "celebration";
     api.root.append(title, message, effect);
-    api.on("hype",(hype)=>{if(!hype?.reactive||hype.muted)return;title.dataset.hype=String(hype.level||"calm");title.style.setProperty("--hype-strength",String(Math.max(0,Math.min(1,Number(hype.score||0)/100))));});
+    api.on("hype",(hype)=>{if(!hype?.reactive||hype.muted)return;title.dataset.hype=String(hype.level||"calm");effect.style.setProperty("--hype-glow-size",`${3+9*Math.max(0,Math.min(1,Number(hype.value||0)/100))}px`);});
     let lastFlashAt=0;
     for (const type of ["follow", "sub", "raid"]) api.on(type, (event) => {
       message.textContent = `${type} celebration${event?.name ? ` for ${String(event.name)}` : "!"} ✨`;

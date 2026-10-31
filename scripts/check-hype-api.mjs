@@ -13,9 +13,10 @@ const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));async function 
 try{
  await waitFor(async()=>{try{return(await fetch(`${base}/api/health`)).ok;}catch{return false;}});
  socket=new WebSocket(`ws://127.0.0.1:${port}/ws`);await new Promise((resolve,reject)=>{socket.once("open",resolve);socket.once("error",reject);});const hypeMessages=[];socket.on("message",(raw)=>{const message=JSON.parse(raw.toString());if(message.type==="hype")hypeMessages.push(Date.now());});
- const initial=await(await fetch(`${base}/api/hype`)).json();if(initial.score!==0||initial.window60.messages!==0)throw new Error("Initial Hype API response was not empty.");
+ const initial=await(await fetch(`${base}/api/hype`)).json();if(initial.value!==0||initial.window60.messages!==0)throw new Error("Initial Hype API response was not empty.");
  const invalid=await fetch(`${base}/api/hype/settings`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({sensitivity:"extreme"})});if(invalid.status!==400)throw new Error("Invalid Hype sensitivity was accepted.");
  const settings=await fetch(`${base}/api/hype/settings`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({sensitivity:"high",manualBoost:40,muted:false,reactive:true,overlayMeter:true})});if(!settings.ok)throw new Error("Hype settings could not be saved.");
+ const simulated=await fetch(`${base}/api/hype/simulate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({energy:80})}).then((response)=>response.json());if(!simulated.simulated||!simulated.hype.simulated)throw new Error("Simulated chat energy was not temporary and marked.");
  for(let i=0;i<8;i++)await fetch(`${base}/api/simulate/${i%3===0?"raid":"chat"}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(i%3===0?{}:{message:"Kappa !vote a"})});
  await sleep(400);const state=await(await fetch(`${base}/api/state`)).json();if(state.settings.hypeSensitivity!=="high"||state.settings.overlayHypeMeter!==true||state.hype.window60.messages!==5)throw new Error("Hype settings, simulation or aggregate state did not reach the API.");
  if("names"in state.hype||"messages"in state.hype||JSON.stringify(state.hype).includes("Kappa"))throw new Error("Hype API exposed raw chat data.");

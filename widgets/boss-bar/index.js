@@ -8,6 +8,7 @@ export default {
     let status = "";
     const draw = () => { meter.value = hp; label.textContent = status || `Boss health ${hp}%`; };
     api.root.append(title, meter, label); draw();
+    api.on("hype",(hype)=>{if(!hype?.reactive||hype.muted)return;api.root.dataset.hype=hype.level;api.root.style.setProperty("--hype-glow-size",`${5+8*hype.value/100}px`);meter.style.setProperty("--hype-glow-size",`${3+6*hype.value/100}px`);});
     api.on("chat", (event) => {
       const text = String(event.message || "").trim().toLowerCase(); status = "";
       if (text === "!attack") { hp = Math.max(0, hp - 10); if (hp === 0) { status = "Boss defeated! A new round begins."; hp = 100; } }

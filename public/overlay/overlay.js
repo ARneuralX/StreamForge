@@ -12,7 +12,7 @@ let frames = new Map();
 let layoutItems = [];
 let themeTokens;
 let overlayHypeMeter=false;
-function updateHype(hype){for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:hype",hype},"*");if(overlayHypeMeter){document.querySelector("#hype-meter").hidden=false;document.querySelector("#hype-value").textContent=String(hype.score);document.querySelector("#hype-progress").value=hype.score;}}
+function updateHype(hype){for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:hype",hype},"*");if(overlayHypeMeter){document.querySelector("#hype-meter").hidden=false;document.querySelector("#hype-value").textContent=String(hype.value);document.querySelector("#hype-progress").value=hype.value;}}
 const toast = document.createElement("section");
 toast.className = "feed"; toast.hidden = true; toast.setAttribute("role", "alert"); document.querySelector("#canvas").append(toast);
 function positionFrames() {
