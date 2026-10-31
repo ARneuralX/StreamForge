@@ -152,11 +152,18 @@ function hypeSnapshot(){return hypeEngine.snapshot(hypeSettings());}
 function publishHype():void{const wait=Math.max(0,250-(Date.now()-lastHypePublish));if(wait){if(!pendingHypePublish)pendingHypePublish=setTimeout(()=>{pendingHypePublish=undefined;lastHypePublish=Date.now();publishHypeNow();},wait);return;}lastHypePublish=Date.now();publishHypeNow();}
 function publishHypeNow():void{const hype=hypeSnapshot(),now=Date.now();publish({type:"hype",hype});void sessions.recordHype(hype.value);if(hype.value>=80&&now-lastRealActivityAt<30_000){if(!hypePeakSince)hypePeakSince=now;}else{hypePeakSince=0;realActivityPeakHandled=false;}if(store.settings.autoClipsEnabled===true&&(store.settings.clipTriggers as Record<string,unknown>)?.hypePeak===true&&hypePeakSince>0&&!realActivityPeakHandled&&now-hypePeakSince>=Number(store.settings.clipHypePeakSeconds)*1000){realActivityPeakHandled=true;void triggerClip("StreamForge hype peak");}}
 
+let persistQueue:Promise<void>=Promise.resolve();
 async function persist(): Promise<void> {
+  const snapshot=JSON.stringify(store,null,2);
+  const previous=persistQueue;let release!:()=>void;
+  persistQueue=new Promise<void>((resolve)=>{release=resolve;});
+  await previous;
+  try{
   const tempPath = `${storePath}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, JSON.stringify(store, null, 2), { mode: 0o600 });
+  await writeFile(tempPath, snapshot, { mode: 0o600 });
   await chmod(tempPath, 0o600);
   await rename(tempPath, storePath);
+  }finally{release();}
 }
 
 function redactDisplay(value: string): string {
@@ -207,6 +214,7 @@ for(const entry of store.library){const widget=store.widgets.find((item)=>item.i
 if(store.widgets.some((widget)=>widget.passport))await persist();
 const recentBuilds = new Map<string, number>();
 const safeDrafts = new Map<string, string>();
+const importLocks = new Map<string, Promise<void>>();
 const anonymousSessionSalt=randomUUID();
 
 const app = express();
@@ -380,9 +388,8 @@ app.get("/api/requests/:id/preview", (req, res) => {
   const source = safeDrafts.get(req.params.id);
   if (!source) return res.status(404).send("Draft preview is not available.");
   const safeSource = source.replace(/<\/script/giu, "<\\/script").replace(/^\s*export\s+default\s+/u, "return ");
-  const background = req.query.bg === "bright" ? "#f5f5f5" : req.query.bg === "checker" ? "conic-gradient(#777 25%, #fff 0 50%, #777 0 75%, #fff 0) 0 / 24px 24px" : "#17151f";
   res.type("html").setHeader("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src data:");
-  res.send(`<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:12px;background:${background};color:#f6f2ff;font:14px system-ui}#widget{min-height:120px}</style><main id="widget"></main><script>const listeners=new Map();const api={root:document.querySelector('#widget'),on(n,f){listeners.set(n,[...(listeners.get(n)||[]),f])},sound:{play(){}},timers:{setTimeout,clearTimeout,setInterval,clearInterval},storage:{get(){return null},set(){}}};window.addEventListener('message',e=>{if(e.data?.kind==='streamforge:event')for(const fn of listeners.get(e.data.event?.type)||[])try{fn(e.data.event.payload||{})}catch(err){parent.postMessage({kind:'streamforge:draft-error',detail:String(err?.message||'Widget error').slice(0,160)},'*')}});try{const widget=(()=>{${safeSource}})();widget.mount(api)}catch(err){document.querySelector('#widget').textContent='Preview blocked: '+String(err?.message||'widget error').slice(0,120)}</script>`);
+  res.send(`<!doctype html><meta charset="utf-8"><style>html,body{width:100%;height:100%}body{margin:0;padding:12px;background:transparent;color:#f6f2ff;font:14px system-ui}#widget{min-height:120px;padding:16px;border:1px solid #a98aff59;border-radius:14px;background:rgba(23,21,31,.78);color:#f6f2ff}</style><main id="widget"></main><script>const listeners=new Map();const api={root:document.querySelector('#widget'),on(n,f){listeners.set(n,[...(listeners.get(n)||[]),f])},sound:{play(){}},timers:{setTimeout,clearTimeout,setInterval,clearInterval},storage:{get(){return null},set(){}}};window.addEventListener('message',e=>{if(e.data?.kind==='streamforge:event')for(const fn of listeners.get(e.data.event?.type)||[])try{fn(e.data.event.payload||{})}catch(err){parent.postMessage({kind:'streamforge:draft-error',detail:String(err?.message||'Widget error').slice(0,160)},'*')}});try{const widget=(()=>{${safeSource}})();widget.mount(api)}catch(err){document.querySelector('#widget').textContent='Preview blocked: '+String(err?.message||'widget error').slice(0,120)}</script>`);
 });
 app.get("/api/library", (_req, res) => res.json(store.library));
 app.get("/api/templates", (_req,res)=>res.json(buildTemplates));
@@ -468,6 +475,14 @@ app.post("/api/library/import", async (req, res) => {
   const codeHash=createHash("sha256").update(artifact.code).digest("hex");
   const duplicate=store.library.find((entry)=>entry.codeHash===codeHash);
   if(duplicate)return res.json({ok:true,alreadyImported:true,entry:duplicate});
+  const previousImport=importLocks.get(codeHash)||Promise.resolve();
+  let releaseImport!:()=>void;
+  const currentImport=new Promise<void>((resolve)=>{releaseImport=resolve;});
+  importLocks.set(codeHash,currentImport);
+  await previousImport;
+  try {
+  const duplicateAfterWait=store.library.find((entry)=>entry.codeHash===codeHash);
+  if(duplicateAfterWait)return res.json({ok:true,alreadyImported:true,entry:duplicateAfterWait});
   const meta=artifact.meta as Record<string,unknown>|undefined;
   const declaredMeta=parseDeclaredMeta(artifact.code);
   const title=typeof meta?.title==="string"?meta.title.trim():"";
@@ -492,6 +507,10 @@ app.post("/api/library/import", async (req, res) => {
     if(promoted)await rm(path.join(widgetRoot,widgetId),{recursive:true,force:true}).catch(()=>{});
     res.status(500).json({error:"Widget passed checks but could not be promoted; temporary files were rolled back."});
   }finally{await rm(draftDir,{recursive:true,force:true}).catch(()=>{});}
+  } finally {
+    releaseImport();
+    if(importLocks.get(codeHash)===currentImport)importLocks.delete(codeHash);
+  }
 });
 app.post("/api/library/:id/add", async (req, res) => {
   const entry = store.library.find((item) => item.id === req.params.id);

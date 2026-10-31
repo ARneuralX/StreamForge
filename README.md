@@ -18,7 +18,7 @@ For Twitch, set `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_CHANNEL`, an
 - **Overview:** request form, setup checklist, simulated chat/follow/sub/raid/redeem events, theme presets, overlay kits, twelve prompt templates, and optional voice prompts.
 - **Build queue / Build Studio:** approve or reject queued requests; view human-readable stages, a sandboxed scanned-draft preview, preview backgrounds, event simulation, and safety results.
 - **Widgets:** toggle widgets, arrange their overlay positions, submit Remix requests and undo a prior Git version.
-- **Library:** browse sandboxed previews, inspect the original prompt and creator, add/remove widgets, and import/export `.sfwidget` files. Imports must pass the static scan and mock mount.
+- **Library:** browse sandboxed previews with per-widget mount/error badges, inspect the original prompt and creator, add/remove widgets, and import/export `.sfwidget` files. Imports must pass the static scan and mock mount.
 - **Settings:** approval mode, vote/time thresholds, retry preference and timeout, Twitch redirect URL, and a non-secret service health panel.
 
 The request queue supports `!build <idea>`, `!remix <widget> <change>`, `!vote N`, `vote N`, `+1`, and moderator `undo <slug>`. A moderator can also use `!theme <Halloween|Neon|Cozy|Retro|Clean>`. Voting is one per account per request. Auto-approval can use a vote threshold, elapsed time, or the simulated channel-point reward.
@@ -26,6 +26,10 @@ The request queue supports `!build <idea>`, `!remix <widget> <change>`, `!vote N
 ## Themes and kits
 
 Five validated presets—Halloween, Neon, Cozy, Retro and Clean—update active overlay widgets without a rebuild. Theme suggestions choose a closest preset while Codex generation is unavailable. Three kits add existing Library widgets and apply a theme: Halloween, Cozy stream and Neon arcade. The Widget API documents validated theme tokens and compatibility.
+
+## Preview backgrounds
+
+Overlay previews accept `?bg=dark|bright|checker|green|transparent`. Build Studio and Library have independent saved preview choices. The shared colors, checker tile size and transparent OBS default are documented in [docs/PREVIEW_BACKGROUNDS.md](docs/PREVIEW_BACKGROUNDS.md). Preview backgrounds affect only the preview surface; the default OBS source remains transparent.
 
 ## Widget Passport and Safe Mode
 
@@ -58,7 +62,7 @@ Choose `BUILD_MODE=mock`, `replay`, or `codex` in `.env`. Mock uses a fixed safe
 
 ## Checks and screenshots
 
-Run `npx tsc --noEmit`, `npm run test:widgets`, and `npm run test:templates`. To capture a dashboard or overlay image, start StreamForge, open the target page in Chrome, set the browser viewport to the desired size, then use Chrome DevTools **Capture screenshot** or macOS screenshot controls. Keep screenshots outside the repository unless they are intentional product assets.
+Run `npx tsc --noEmit`, `npm run test:widgets`, `npm run test:templates`, `npm run test:theme-frames`, `npm run test:preview-backgrounds`, `npm run check:library`, and `OPEN_BROWSER=false npm run qa:ui`. These checks use mock/replay mode and do not require real Twitch traffic or a real Codex build. To capture a dashboard or overlay image, start StreamForge, open the target page in Chrome, set the browser viewport to the desired size, then use Chrome DevTools **Capture screenshot** or macOS screenshot controls. Keep screenshots outside the repository unless they are intentional product assets.
 
 The Codex SDK Step 0 gate was run by the user. Real SDK login, Verify Codex, a real build and Twitch authorization still need the user's manual check in their own Terminal.
 

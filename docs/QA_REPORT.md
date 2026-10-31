@@ -11,7 +11,18 @@
 - Stage 4 preview backgrounds: `npm run test:preview-backgrounds` pixel-samples all five choices on overlay, Build Studio and Library, checks transparent frame styling, independently persisted dashboard choices, and the default transparent OBS canvas. It exposed and fixed a malformed checker `background-image` value; tile size is now set separately. The preview message carries only validated visual background data into the opaque widget sandbox.
 - Browser dependency: no new package. The harness drives the installed Chrome with the DevTools Protocol.
 
+## Stage 5 Library reliability
+
+- `npm run check:library` passes: 10 sandboxed Library previews mounted; 16 passport-declared events were delivered through the runtime bridge; Add/Remove stayed idempotent under eight concurrent requests; eight simultaneous imports converged on one entry; the UI duplicate-import message and rapid Preview selection passed.
+- Per-card health badges report runtime mount/error messages, including a simulated event-handler failure. This run used a copied widget tree, isolated state, mock BUILD_MODE, no browser launch and no Twitch connection.
+- The earlier Library screenshot captured frames before lazy modules mounted. This check scrolls each frame into view and waits for a mount or error report.
+
 ## Known limits
 
 - Screenshot results are ignored build artifacts and are not committed. The harness contrast check samples computed colors and estimates gradient contrast at the midpoint; Phase 4B adds pixel-level theme and preview-background checks.
-- The initial Library screenshot captured frames before lazy widget modules finished mounting. Stage 5 checks explicitly wait for each sandbox preview to report mount or failure.
+
+## Stage 6 final regression
+
+- All runnable `test:*`, `check:library`, `qa:phase3`, and `OPEN_BROWSER=false npm run qa:ui` checks passed. The required startup smoke passes in isolated mock mode. `codex:check` was excluded by the project rule; no real Codex build or Twitch connection was made.
+- Final UI result: 8 dashboard pages × 4 viewports plus overlay at 1920×1080; 0 browser diagnostics, failed requests, or layout/accessibility failures.
+- Final Library result: 10 sandboxed previews, all 16 declared events, concurrent Add/Remove/Import, error badge, Export, and rapid Preview selection passed.

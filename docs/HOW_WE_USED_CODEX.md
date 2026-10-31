@@ -34,6 +34,10 @@ This summary follows the repository commit history. It distinguishes the SDK ver
 
 Phase 4 uses the deterministic mock path. No real Codex build or Twitch API traffic was run. Auto-Clips remains OFF because the local OAuth callback does not exchange tokens and channel live-state checking is absent; language identification remains heuristic.
 
+## Phase 4B recovery and UI reliability
+
+Phase 4B stages 2–6 repaired the Overview layout, proved live theme-token updates in sandboxed widgets, shared exact preview backgrounds across the overlay and dashboard previews, and made Library loading/actions verifiable. Pixel tests cover all widget/theme and preview-background choices; the Library check mounts every built-in source in sandboxed frames, replays declared events, and races idempotent actions/imports against isolated mock state. The Stage 6 smoke also exposed and fixed overlapping dashboard renders and handlers attached to detached preview frames. Stage 4B used mock data and temporary widget/data directories; no live Twitch traffic or real Codex build was performed. See [PROGRESS.md](../PROGRESS.md) and [QA_REPORT.md](QA_REPORT.md) for the ordered findings and test results.
+
 ## Safety model in the repository
 
 Widget frames are sandboxed with scripts enabled and same-origin access disabled. Their CSP blocks network connections. The server statically scans widget source, then runs a VM mock mount before promoting imports or builds. Widget changes use Git checkpoints and the Undo path safety-checks the restored source. Chat and widget text is rendered as text, public activity redacts paths and usernames, and widget storage requests pass through the host with safe keys and a size limit.

@@ -2,7 +2,7 @@
 
 ## Architecture
 
-StreamForge is a local Node/TypeScript Express application. `src/server.ts` owns configuration loading, in-memory application state backed by atomic JSON persistence, HTTP APIs, the WebSocket event bus, and the mock build/import/rollback flows. `src/security/` contains request normalization, source scanning, Widget Passport heuristics, and color contrast helpers. `src/hype/engine.ts` computes aggregate activity and `src/sessions/manager.ts` stores session aggregates. The dashboard and overlay are dependency-free HTML, CSS, and JavaScript. Each widget runs in its own `sandbox="allow-scripts"` iframe; the host bridge in `widgets/runtime.js` limits communication to validated events, theme/motion updates, and host-mediated storage. The frame CSP blocks network connections.
+StreamForge is a local Node/TypeScript Express application. `src/server.ts` owns configuration loading, in-memory application state backed by serialized atomic JSON persistence, HTTP APIs, the WebSocket event bus, and the mock build/import/rollback flows. `src/security/` contains request normalization, source scanning, Widget Passport heuristics, and color contrast helpers. `src/hype/engine.ts` computes aggregate activity and `src/sessions/manager.ts` stores session aggregates. The dashboard and overlay are dependency-free HTML, CSS, and JavaScript. Each widget runs in its own `sandbox="allow-scripts"` iframe; the host bridge in `widgets/runtime.js` limits communication to validated events, themes/motion, preview-only background styling, and host-mediated storage. The frame CSP blocks network connections.
 
 ```mermaid
 flowchart LR
@@ -55,6 +55,8 @@ flowchart LR
 | `docs/QA_REPORT.md` | Phase 4B QA harness baseline, checks and known limits. |
 | `scripts/qa-ui.mjs` | Mock server + installed Chrome/CDP dashboard and overlay visual QA. |
 | `scripts/qa-phase3.mjs` | Phase 3 isolated browser/API smoke across pages and widgets. |
+| `scripts/check-preview-backgrounds.mjs` | Rendered-pixel proof for overlay, Build Studio and Library background options. |
+| `scripts/check-library.mjs` | Sandboxed Library mount/event health, import/action races, export and preview reliability proof. |
 | `scripts/check-*.mjs` | Focused widget, template, Passport, Hype, sessions, scenes, clips, multilingual, Demo Director, dotenv, OAuth, token store, IRC, EventSub, fake Twitch clips API, sandboxed theme pixel/token proof, fake Codex runner, verification, replay and startup checks; `*-api` scripts start local mock servers. |
 | `scripts/diagnose-phase4b.mjs` | Phase 4B UI/preview diagnostic probe. |
 | `scripts/check-theme-frames.mjs` | Phase 4B sandbox frame theme-token diagnostic/check. |
@@ -75,7 +77,7 @@ Static routes: `/` redirects to `/dashboard/`; `/dashboard`, `/overlay`, and `/w
 
 ## WebSocket messages
 
-Server-to-client message types include `hello`, `event`, `request`, `queue`, `buildFeed`, `draftPreview`, `code`, `chat`, `widgets`, `theme`, `safeMode`, `hype`, `hypeSettings`, `session`, `scene`, `demoStatus`, `moderation`, and `runtimeError`. Browser clients use `/ws`. Overlay-to-frame `postMessage` kinds are `streamforge:event`, `streamforge:theme`, `streamforge:safe-mode`, `streamforge:hype`, and `streamforge:storage:init`; frame-to-host messages cover storage get/set, error reporting and validated moments.
+Server-to-client message types include `hello`, `event`, `request`, `queue`, `buildFeed`, `draftPreview`, `code`, `chat`, `widgets`, `theme`, `safeMode`, `hype`, `hypeSettings`, `session`, `scene`, `demoStatus`, `moderation`, and `runtimeError`. Browser clients use `/ws`. Host-to-frame `postMessage` kinds include `streamforge:event`, `streamforge:theme`, `streamforge:safe-mode`, `streamforge:hype`, `streamforge:storage:init`, and the visual-only `streamforge:preview-background`. Frame-to-host messages cover storage get/set, mount/error reports, event-delivery acknowledgements, theme acknowledgements and validated moments.
 
 ## State and settings
 
@@ -94,6 +96,9 @@ Widget metadata declares title, description, dimensions, initial coordinates and
 | `npm run restart` | Restarts the local server on its configured port. |
 | `npm run test:widgets` | Static scans/mock mounts the widget set, checks dice natural-20 fireworks and simulated starter-pack interactions. |
 | `npm run test:templates` | Validates each template prompt and its referenced Library widget. |
+| `npm run test:theme-frames` | Pixel/token proof across all nine sandboxed widgets and recap theme presets. |
+| `npm run test:preview-backgrounds` | Pixel proof for five backgrounds on overlay, Build Studio and Library. |
+| `npm run check:library` | Real sandboxed Library mounts, declared event replay, health, actions/import races and preview changes. |
 | `npm run test:passport` | Exercises Passport output, heuristic risk summary, scan summary and contrast repair. |
 | `npm run test:hype` | Tests synthetic engine traffic and isolated HTTP/WebSocket behavior/privacy. |
 | `npm run test:sessions` | Tests session aggregates/lifecycle and isolated API persistence/export/delete. |
@@ -102,9 +107,10 @@ Widget metadata declares title, description, dimensions, initial coordinates and
 | `npm run test:multilingual` | Tests normalization, length, script/confusable heuristics and API manual-review gating. |
 | `npm run test:demo` | Tests the simulated sequence, APIs, restore behavior and recap marker. |
 | `npm run qa:phase3` | Isolated Phase 3 mock API/browser regression smoke. |
-| `npm run qa:ui` | Dashboard viewport and overlay browser diagnostics/screenshots; does not yet audit Library widgets individually. |
+| `npm run qa:ui` | Dashboard viewport and overlay browser diagnostics/screenshots. |
+| `npm run test:startup` | Isolated mock startup, dashboard-ready output, browser suppression and busy-port behavior. |
 | `npm run codex:check` | SDK login/build gate only; prohibited to run during this continuation. |
 
 ## Current baseline and known gaps
 
-On 2026-10-31, `npx tsc --noEmit` and all nine `npm test:*` scripts passed in an isolated/mock context. The server API scripts required an approved unsandboxed localhost bind; no real Twitch traffic or SDK build was used. Phase 4B Stage 1 `qa:ui` exists. The continuation's next work is real integrations implemented in new modules and tested only with fake SDK/server fixtures, then Phase 4B recovery and stages 2–6. At this map's creation, `src/twitch/` and `src/codex/` do not exist; OAuth exchange, token storage/refresh, IRC, EventSub, real Codex builds, real replay recording, stream status and clip creation are missing. Stage 4B still needs overview recovery, theme proof/fixes, shared preview backgrounds, Library reliability audit, and final regression close.
+On 2026-10-31, Phase 4B stages 2–6 completed after the integrations documented above. TypeScript, runnable test suites, mock startup smoke, Phase 3 smoke, sandboxed theme/background pixel proofs, `check:library`, and final responsive UI QA passed. `scripts/codex-check.mjs` was not run; no real Codex build, live Twitch traffic or OAuth authorization was used. Real Twitch/Codex account verification and OBS setup remain manual user checks. Phase 5 was not started.

@@ -183,3 +183,18 @@
 - Added `npm run test:preview-backgrounds`, which samples rendered pixels for all five choices on overlay, Build Studio and Library and checks the transparent state, independent saved choices, and a default transparent OBS canvas.
 - Verified the isolated mock-mode pixel suite, `npx tsc --noEmit`, `OPEN_BROWSER=false npm run qa:ui`, and `git diff --check`. No real Twitch/Codex behavior was used.
 - Next: Phase 4B stage 5 Library reliability and sandboxed preview checks.
+
+### Phase 4B stage 5: Library reliability
+
+- Done: every Library card now runs in the real opaque sandboxed widget iframe and shows a per-card Loading, Starting, Mounted, No response or Runtime error status. The runtime reports when it has dispatched each parent-simulated event; the Library check drives every event declared in the widget passport, including every built-in widget source.
+- Root cause: Library cards had sandboxed previews but no mount/error status, and the page relied on a screenshot timing delay rather than mount evidence. Concurrent imports could all pass the initial duplicate check while the safety scan was awaiting. Persistence writes could also race and leave stale state on disk. Added per-code import serialization with a second duplicate check and serialized atomic state writes. Add/Remove remain state-setting operations, UI actions recover from request failures, and preview updates keep the last selected frame style during rapid reloads.
+- Added `npm run check:library`: mock server, temporary state and widget copy, ten sandboxed cards covering all nine built-in widget sources plus an error fixture, 16 passport events, eight concurrent Add/Remove requests, eight same-code concurrent imports, duplicate Import UI feedback, Export and rapid Preview changes. It writes the current Stage 5 result to `docs/QA_REPORT.md`.
+- Verified `npm run check:library`, `npx tsc --noEmit`, and `git diff --check`. No live Twitch/Codex behavior was used.
+- Next: Phase 4B stage 6 full regression, smoke check, documentation review and checkpoint commit.
+
+### Phase 4B stage 6: regression and handoff
+
+- Done: reran TypeScript, all test scripts (environment, Twitch OAuth/token/IRC/EventSub/clips, fake Codex runner/verify/replay, widgets/templates/passports, hype/sessions/scenes/clips/multilingual/demo, startup, theme frames, preview backgrounds and Library), `qa:phase3`, and `OPEN_BROWSER=false npm run qa:ui`. Every run passed; UI QA reports 8 pages × 4 viewports and overlay with zero diagnostics, failed requests or layout/accessibility findings.
+- Root cause from smoke: initial dashboard rendering and the WebSocket hello could overlap, and handlers retained the detached render container after insertion. The router now orders state/render revisions and commits the same container that page handlers use. The final mock end-to-end smoke passes after this fix.
+- Updated README, Codex-use history and QA report with preview, Library and final regression instructions. No real Twitch traffic, real Codex build, `.env` contents or Phase 5 prompt were accessed. The prohibited `codex:check` gate was not run.
+- Phase 4B stages 2–6 are complete and checkpointed. Stop here; Phase 5 was not started.

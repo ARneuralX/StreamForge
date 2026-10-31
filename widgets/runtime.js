@@ -31,9 +31,12 @@ window.addEventListener("message", (event) => {
   if(event.source!==parent)return;
   const message = event.data;
   if (!message || message.kind !== "streamforge:event") return;
-  for (const handler of listeners.get(message.event?.type) || []) {
+  const eventType=String(message.event?.type||"");
+  const handlers=listeners.get(eventType)||[];
+  for (const handler of handlers) {
     try { handler(message.event.payload || {}); } catch (error) { reportError(error); }
   }
+  parent.postMessage({kind:"streamforge:event-delivered",id:widgetId,eventType,handlerCount:handlers.length},"*");
 });
 try {
   await storageReady;
