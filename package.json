@@ -34,7 +34,8 @@
     "test:clips": "npm run build && node scripts/check-clips-api.mjs",
     "test:multilingual": "npm run build && node scripts/check-multilingual.mjs && node scripts/check-multilingual-api.mjs",
     "test:demo": "npm run build && node scripts/check-demo-api.mjs",
-    "qa:ui": "npm run build && node scripts/qa-ui.mjs"
+    "qa:ui": "npm run build && node scripts/qa-ui.mjs",
+    "ui:smoke": "npm run build && node scripts/ui-smoke.mjs"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.166.0",

@@ -26,3 +26,11 @@
 - All runnable `test:*`, `check:library`, `qa:phase3`, and `OPEN_BROWSER=false npm run qa:ui` checks passed. The required startup smoke passes in isolated mock mode. `codex:check` was excluded by the project rule; no real Codex build or Twitch connection was made.
 - Final UI result: 8 dashboard pages × 4 viewports plus overlay at 1920×1080; 0 browser diagnostics, failed requests, or layout/accessibility failures.
 - Final Library result: 10 sandboxed previews, all 16 declared events, concurrent Add/Remove/Import, error badge, Export, and rapid Preview selection passed.
+
+## Stage 8 UI regression
+
+- `npm run ui:smoke` runs an isolated mock server and headless Chrome click-through. It opened all eight nav pages, added an Overview idea, simulated chat/follow/sub/raid/redeem, applied all five existing widget theme presets, added a Library widget after removing it from the scene, applied and undid a scene, and toggled Safe Mode. Result: zero browser console errors and failed requests.
+- `npm run qa:ui` checks every dashboard page with each of the five existing widget theme presets at 1024×768, 1440×900 and 1920×1080, plus 390×844 on Overview, Build Studio, Widgets and Library. It audits overflow, clipped content, target sizes, card overlap and sampled AA contrast. It also runs a nine-widget overlay layout fixture against reserved HUD zones and checks running animations under `prefers-reduced-motion: reduce` in the overlay and sandbox frames.
+- Selected screenshots are committed under `docs/screens/after/`; detailed per-theme captures and machine-readable results remain ignored under `qa-artifacts/`.
+- Theme scope limitation: Stage 8 requests all four app themes from stages 1–2, but stages 1–3 were absent at the starting checkpoint and this requested run is limited to stages 4–8. The checkout contains five widget theme presets, which are covered above; it has no separate four-theme app layer. No app themes were invented or reported as tested.
+- Before/after evidence limitation: no baseline screenshot set was present in the starting checkout. The written comparison in `RESUME.md` uses the recorded stage 4–7 changes and does not claim pixel comparisons against missing images.

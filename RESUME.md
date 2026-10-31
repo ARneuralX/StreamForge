@@ -35,10 +35,30 @@
 - Verification: `npx tsc --noEmit`, all existing test scripts, `npm run check:library`, `npm run qa:phase3`, `npm run test:preview-backgrounds`, and `npm run qa:ui` passed. UI QA covered 8 pages × 4 viewports plus the transparent overlay; 0 browser diagnostics, failed requests, or layout/accessibility findings. A nine-widget layout fixture placed all nine widgets around the mode/hint zones and Up Next.
 - Commit/tag: `UI stage 7: overlay HUD and layout`; `ui-s7`.
 
-## Next
-
-- Stage 8: UI smoke, expanded QA, screenshots, documentation and regression.
-
 ## Known prerequisite gap
 
 - The prompt's design/motion system and four app themes plus Auto from stages 1–2 are absent at the starting checkpoint. The shell and Overview already have project UI work, but stages 1–3 are not claimed or backfilled as part of this range. Any stage 8 requirement that depends on the missing app themes must be recorded accurately.
+
+## Stage 8 — QA, regression and docs
+
+- Done: added `npm run ui:smoke` for mock-mode click-through of all eight nav pages, Overview queue submission, all five simulated event types, all five existing widget themes, Library add, scene Apply/Undo and Safe Mode. It fails on browser console errors and failed requests.
+- Done: expanded `qa:ui` to five existing widget theme presets × eight pages × 1024/1440/1920 widths, plus 390×844 on Overview, Build Studio, Widgets and Library. Audits include overflow, clipped content, undersized targets, card overlaps, sampled AA contrast, a nine-widget layout fixture checked against reserved HUD zones, and reduced-motion running-animation checks.
+- Captures: selected Clean-theme page screenshots and overlay are under `docs/screens/after/`; full QA captures and JSON results are ignored in `qa-artifacts/`.
+- Before/after summary: the pre-redesign shell had denser queue cards and less explicit status; Stage 4 adds clear queue/build progress and sandbox preview. Stage 5 adds live widget/Library previews and direct scene controls. Stage 6 groups settings, session recap and scene controls. Stage 7 reserves HUD space during overlay widget layout. Stage 8 adds repeatable browser regression and after screenshots. No before screenshot files existed at the starting checkpoint, so this is a feature summary, not a pixel comparison.
+- Theme limitation: this run has five existing widget presets and tests each. The four app themes plus Auto requested by stages 1–2 are absent because the task scope starts at stage 4; Stage 8's app-theme coverage cannot be met within this authorized range. No app theme layer was added.
+- Verification: `npm run ui:smoke`, `npm run qa:ui`, `npx tsc --noEmit`, every existing runnable `test:*` script, `npm run check:library`, and `npm run qa:phase3` passed in mock/replay mode with isolated data. No live Twitch traffic or real Codex build.
+- Commit/tag: `UI stage 8: QA, regression and docs`; `ui-s8`.
+
+## Before / after summary
+
+| Area | Before | After stages 4–8 |
+| --- | --- | --- |
+| Build Studio | Compact queue/build status | Requester/status cards, progress steps, safety ticks, redacted activity and sandbox preview |
+| Widgets and Library | Basic lists | Lazy sandbox previews, health/status details, scene controls, search and import drop zone |
+| Settings and stream tools | Dense page sections | Grouped controls, theme swatches, session recap, scene previews and Demo timeline |
+| Overlay | Widgets positioned without measured HUD reservations | HUD-aware placement and responsive panel positioning |
+| Regression evidence | Existing QA harness and no tracked baseline captures | Mock click-through, expanded multi-theme responsive QA and selected after screenshots |
+
+## Complete
+
+- Requested stage range 4–8 is complete. Earlier stages remain unclaimed; app-theme prerequisite gap is documented above.

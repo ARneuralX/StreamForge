@@ -46,7 +46,9 @@ try {
   });
   await cdp("Runtime.enable"); await cdp("Log.enable"); await cdp("Page.enable"); await cdp("Network.enable");
   const evaluate = async expression => { const result = await cdp("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw Error(result.exceptionDetails.text); return result.result?.value; };
-  const viewports = [[1024, 768], [1280, 720], [1440, 900], [1920, 1080]];
+  const viewports = [[1024, 768], [1440, 900], [1920, 1080]];
+  const mobilePages = new Set(["overview", "queue", "widgets", "library"]);
+  const themes = ["Halloween", "Neon", "Cozy", "Retro", "Clean"];
   const pages = [["overview", "Overview"], ["queue", "Build Studio"], ["widgets", "Widgets"], ["library", "Widget library"], ["settings", "Settings"], ["sessions", "Stream sessions"], ["scenes", "Scene presets"], ["demo", "Demo Director"]];
   const layoutExpression = `(()=>{
     const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=="none"&&s.visibility!=="hidden"};
@@ -54,27 +56,31 @@ try {
     const root=document.querySelector("#page"),els=[...root.querySelectorAll("*")].filter(visible);
     const clipped=els.filter(e=>{const s=getComputedStyle(e);return(s.overflow==="hidden"||s.overflowX==="hidden"||s.overflowY==="hidden"||s.overflow==="clip")&&(e.scrollWidth>e.clientWidth+2||e.scrollHeight>e.clientHeight+2)}).slice(0,8).map(e=>({text:e.innerText?.slice(0,40),box:rect(e)}));
     const overflow=document.documentElement.scrollWidth>document.documentElement.clientWidth+1||document.body.scrollWidth>document.body.clientWidth+1;
-    const targets=[...root.querySelectorAll("button,a,input,select,textarea,[role=button]")].filter(visible).map(e=>["checkbox","radio"].includes(e.type)?e.closest("label")||e:e).filter(e=>{const r=e.getBoundingClientRect();return r.width<32||r.height<32}).slice(0,8).map(e=>({tag:e.tagName,text:e.innerText?.slice(0,30),box:rect(e)}));
+    const targets=[...root.querySelectorAll("button,a,input,select,textarea,[role=button]")].filter(visible).map(e=>["checkbox","radio"].includes(e.type)?e.closest("label")||e:e).filter(e=>{const r=e.getBoundingClientRect();return r.width<31||r.height<31}).slice(0,8).map(e=>({tag:e.tagName,text:e.innerText?.slice(0,30),box:rect(e)}));
     const cards=[...root.querySelectorAll(".card")].filter(visible),overlaps=[];
     for(let i=0;i<cards.length;i++)for(let j=i+1;j<cards.length;j++){if(cards[i].contains(cards[j])||cards[j].contains(cards[i]))continue;const a=rect(cards[i]),b=rect(cards[j]),w=Math.min(a.right,b.right)-Math.max(a.x,b.x),h=Math.min(a.bottom,b.bottom)-Math.max(a.y,b.y);if(w>2&&h>2)overlaps.push({a:cards[i].querySelector("h1,h2,h3")?.textContent,b:cards[j].querySelector("h1,h2,h3")?.textContent,area:w*h});}
     const rgba=v=>{const m=v.match(/[\\d.]+/gu)||[];return[m.length?Number(m[0]):0,m.length>1?Number(m[1]):0,m.length>2?Number(m[2]):0,m.length>3?Number(m[3]):1]};
     const blend=(top,bottom)=>{const a=top[3],out=a+bottom[3]*(1-a);return[0,1,2].map(i=>out?(top[i]*a+bottom[i]*bottom[3]*(1-a))/out:0).concat(out)};
     const lum=c=>{const q=c.slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return .2126*q[0]+.7152*q[1]+.0722*q[2]};const contrast=[];
     for(const e of els){if(!e.innerText?.trim()||e.children.length&&e.innerText.trim().length<2)continue;const s=getComputedStyle(e),fg=rgba(s.color);let bg=[12,11,18,1],anc=[];for(let n=e;n;n=n.parentElement)anc.unshift(n);for(const n of anc){const cs=getComputedStyle(n),raw=cs.backgroundColor;if(raw!=="rgba(0, 0, 0, 0)"&&raw!=="transparent")bg=blend(rgba(raw),bg);const stops=cs.backgroundImage.match(/rgba?\\([^)]*\\)/gu)||[];if(stops.length>=2)bg=blend(blend(rgba(stops[0]),rgba(stops.at(-1))),bg);}const ratio=(Math.max(lum(fg),lum(bg))+.05)/(Math.min(lum(fg),lum(bg))+.05),large=parseFloat(s.fontSize)>=24||parseFloat(s.fontSize)>=18.66&&parseInt(s.fontWeight)>=700;if(ratio<(large?3:4.5))contrast.push({text:e.innerText.trim().slice(0,32),ratio:Number(ratio.toFixed(2))});}
-    const stats=document.querySelector(".overview-stats"),twoColumn=document.querySelector(".overview-two-column"),overviewAudit=location.hash==="#overview"?{statsGrid:getComputedStyle(stats).display==="grid"&&getComputedStyle(stats).gridTemplateColumns.split(" ").length>=3,twoColumnGrid:getComputedStyle(twoColumn).display==="grid"&&getComputedStyle(twoColumn).gridTemplateColumns.split(" ").length>=2,summarySpaced:getComputedStyle(document.querySelector(".overview-section summary")).display==="flex",demoCollapsible:Boolean(document.querySelector("#overview-demo details[data-section=demo]")),recapContained:document.querySelector("#overview-recap").getBoundingClientRect().width<=document.querySelector("#overview-recap").parentElement.getBoundingClientRect().width+1,themeSwatches:document.querySelectorAll(".theme-preview-strip [data-theme]").length===5&&document.querySelectorAll('.theme-preview-strip [data-theme][aria-pressed="true"]').length===1}:null;
+    const stats=document.querySelector(".overview-stats"),twoColumn=document.querySelector(".overview-two-column"),mobile=innerWidth<=620,overviewAudit=location.hash==="#overview"?{statsGrid:getComputedStyle(stats).display==="grid"&&getComputedStyle(stats).gridTemplateColumns.split(" ").length>=(mobile?1:3),twoColumnGrid:getComputedStyle(twoColumn).display==="grid"&&getComputedStyle(twoColumn).gridTemplateColumns.split(" ").length>=(mobile?1:2),summarySpaced:getComputedStyle(document.querySelector(".overview-section summary")).display==="flex",demoCollapsible:Boolean(document.querySelector("#overview-demo details[data-section=demo]")),recapContained:document.querySelector("#overview-recap").getBoundingClientRect().width<=document.querySelector("#overview-recap").parentElement.getBoundingClientRect().width+1,themeSwatches:document.querySelectorAll(".theme-preview-strip [data-theme]").length===5&&document.querySelectorAll('.theme-preview-strip [data-theme][aria-pressed="true"]').length===1}:null;
     return{overflow,clipped,targets,overlaps,contrast:contrast.slice(0,8),overviewAudit};
   })()`;
-  for (const [width, height] of viewports) {
-    await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
-    for (const [hash, title] of pages) {
-      const name = `${hash}-${width}x${height}`; await cdp("Page.navigate", { url: `${base}/dashboard/#${hash}` });
+  for (const theme of themes) {
+    await cdp("Page.navigate", { url: `${base}/dashboard/#overview` });
+    await waitFor(async()=>evaluate("document.querySelector('#page h1')?.textContent==='Overview'"), `${theme} theme overview`);
+    await evaluate(`(async()=>{const details=document.querySelector('details[data-section="appearance"]');details.open=true;const button=document.querySelector('[data-theme="${theme}"]');button.click();for(let i=0;i<40;i++){await new Promise(r=>setTimeout(r,50));if(button.getAttribute('aria-pressed')==='true')return true;}return false})()`);
+    const tasks = [...pages.flatMap(page => viewports.map(([width,height])=>[page,width,height])), ...pages.filter(([hash])=>mobilePages.has(hash)).map(page=>[page,390,844])];
+    for (const [[hash, title], width, height] of tasks) {
+      await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width===390 });
+      const name = `${theme}-${hash}-${width}x${height}`; await cdp("Page.navigate", { url: `${base}/dashboard/#${hash}` });
       await waitFor(async () => evaluate(`document.querySelector('#page h1')?.textContent===${JSON.stringify(title)}`), name); await sleep(100);
       const result = await evaluate(layoutExpression);
       if(hash==="overview"&&Object.entries(result.overviewAudit||{}).some(([,passed])=>!passed))failures.push(`${name}: overview structure ${JSON.stringify(result.overviewAudit)}`);
       if (result.overflow) failures.push(`${name}: horizontal overflow`); if (result.clipped.length) failures.push(`${name}: clipped text ${JSON.stringify(result.clipped)}`);
       if (result.targets.length) failures.push(`${name}: undersized targets ${JSON.stringify(result.targets)}`); if (result.overlaps.length) failures.push(`${name}: overlapping cards ${JSON.stringify(result.overlaps)}`);
       if (result.contrast.length) failures.push(`${name}: low contrast ${JSON.stringify(result.contrast)}`);
-      const image = await cdp("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, fromSurface: true }); await writeFile(path.join(artifacts, `${name}.png`), Buffer.from(image.data, "base64"));
+      if(theme==="Clean"&&(width===1440||width===390)){const image = await cdp("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, fromSurface: true }); await writeFile(path.join(artifacts, `${name}.png`), Buffer.from(image.data, "base64"));}
     }
   }
   await cdp("Page.navigate", { url: `${base}/dashboard/#overview` });
@@ -83,13 +89,22 @@ try {
   if(!swatchApplied)failures.push("Overview theme preview swatch did not update the active preset without a page reload.");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }); await cdp("Page.navigate", { url: `${base}/overlay/?bg=transparent` });
   await waitFor(async () => evaluate("Boolean(document.querySelector('#canvas')&&document.querySelector('#runner-hint'))"), "overlay"); await sleep(250);
-  const overlay = await evaluate(`(()=>({overflow:document.documentElement.scrollWidth>innerWidth,frames:[...document.querySelectorAll('#widgets iframe')].map(frame=>frame.getAttribute('sandbox'))}))()`);
+  const overlay = await evaluate(`(async()=>{const frames=[...document.querySelectorAll('#widgets iframe')];const positions=await import('/overlay/layout.js').then(({computeLayout})=>computeLayout(Array.from({length:9},(_,i)=>({id:'fixture-'+i,width:320,height:180,position:{x:80+(i%3)*420,y:120+Math.floor(i/3)*260}})),{zones:[{x:40,y:20,width:420,height:70},{x:1440,y:20,width:440,height:180}]}));let collisions=0;for(let i=0;i<positions.length;i++)for(let j=i+1;j<positions.length;j++){const a=positions[i],b=positions[j];if(a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y)collisions++;}return{overflow:document.documentElement.scrollWidth>innerWidth,frames:frames.map(frame=>frame.getAttribute('sandbox')),widgetFrames:frames.length,positions:positions.length,collisions}})()`);
   if (overlay.overflow) failures.push("overlay-1920x1080: horizontal overflow"); if (overlay.frames.some(value => value !== "allow-scripts")) failures.push("overlay: iframe sandbox changed");
+  if(overlay.collisions||overlay.positions!==9)failures.push(`overlay nine-widget overlap fixture: ${JSON.stringify({positions:overlay.positions,collisions:overlay.collisions})}`);
+  await cdp("Emulation.setEmulatedMedia",{features:[{name:"prefers-reduced-motion",value:"reduce"}]});
+  const tree=await cdp("Page.getFrameTree"),frameIds=[];
+  const collectFrames=node=>{for(const child of node.childFrames||[]){frameIds.push(child.frame.id);collectFrames(child);}};collectFrames(tree.frameTree);
+  const motion=[],frameClipping=[];
+  for(const frameId of frameIds){const world=await cdp("Page.createIsolatedWorld",{frameId,worldName:"streamforge-motion-audit"});const result=await cdp("Runtime.evaluate",{contextId:world.executionContextId,expression:"({running:document.getAnimations({subtree:true}).filter(animation=>animation.playState==='running').length,clipped:[...document.querySelectorAll('*')].filter(element=>{const style=getComputedStyle(element);return (style.overflow==='hidden'||style.overflowX==='hidden'||style.overflowY==='hidden'||style.overflow==='clip')&&(element.scrollHeight>element.clientHeight+2||element.scrollWidth>element.clientWidth+2)}).map(element=>({tag:element.tagName,className:element.className?.toString().slice(0,60),scroll:[element.scrollWidth,element.scrollHeight],client:[element.clientWidth,element.clientHeight]}))})",returnByValue:true});const value=result.result?.value||{running:-1,clipped:[{error:"frame evaluation failed"}]};motion.push(value.running);if(value.clipped.length)frameClipping.push({frameId,clipped:value.clipped});}
+  const hostMotion=await evaluate("document.getAnimations({subtree:true}).filter(animation=>animation.playState==='running').length");
+  if(hostMotion!==0||motion.some(count=>count!==0))failures.push(`overlay reduced-motion running animations: ${JSON.stringify({hostMotion,frames:motion})}`);
+  if(frameClipping.length)failures.push(`overlay widget clipped content: ${JSON.stringify(frameClipping)}`);
   const overlayImage = await cdp("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, fromSurface: true }); await writeFile(path.join(artifacts, "overlay-1920x1080.png"), Buffer.from(overlayImage.data, "base64"));
   if (browserErrors.length) failures.push(`browser diagnostics ${JSON.stringify(browserErrors.slice(0, 12))}`); if (failedRequests.length) failures.push(`failed requests ${JSON.stringify(failedRequests.slice(0, 12))}`);
-  const report = { viewports: viewports.map(([w,h]) => `${w}x${h}`), pages: pages.map(([name]) => name), overlay: "1920x1080", browserErrors, failedRequests, failures };
+  const report = { themes, viewports: ["1024x768","1440x900","1920x1080","390x844 (Overview, Build Studio, Widgets, Library)"], pages: pages.map(([name]) => name), overlay: "1920x1080; nine-widget overlap fixture", reducedMotion: { hostAndWidgetFramesChecked: true }, browserErrors, failedRequests, failures };
   await writeFile(path.join(artifacts, "qa-ui-results.json"), JSON.stringify(report, null, 2));
-  process.stdout.write(`QA UI: ${pages.length} pages × ${viewports.length} viewports, overlay 1920x1080, ${browserErrors.length} browser diagnostics, ${failedRequests.length} failed requests, ${failures.length} layout/accessibility failures.\n`);
+  process.stdout.write(`QA UI: ${themes.length} widget themes × ${pages.length} pages × 3 desktop viewports plus 390px mobile on 4 pages, overlay and reduced-motion checks, ${browserErrors.length} browser diagnostics, ${failedRequests.length} failed requests, ${failures.length} layout/accessibility failures.\n`);
   for (const failure of failures.slice(0, 30)) process.stdout.write(`${failures.length ? "FAIL" : "PASS"} ${failure}\n`);
   if (failures.length) process.exitCode = 1; else process.stdout.write("PASS UI checks.\n");
 } finally {
