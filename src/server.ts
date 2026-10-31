@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { writeFile as writeWidgetFile } from "node:fs/promises";
 import { WebSocketServer, WebSocket } from "ws";
 import { checkWidgetSource } from "./security/widget-checks.js";
@@ -13,7 +13,7 @@ import { checkWidgetSource } from "./security/widget-checks.js";
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
 type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean };
-type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string };
+type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; codexVerification?: { time: string; ok: boolean; error?: string } };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -89,6 +89,14 @@ function resolveWidgetName(name: string): WidgetMeta | undefined {
   const normalized = name.trim().toLocaleLowerCase();
   return store.widgets.find((widget) => widget.id.toLocaleLowerCase() === normalized || widget.title.toLocaleLowerCase() === normalized || widget.title.toLocaleLowerCase().replace(/\s+/gu, "-") === normalized);
 }
+function parseDeclaredMeta(source: string): {title:string;description:string;width:number;height:number;x:number;y:number;anchor:string}|undefined {
+  const block=source.match(/\bmeta\s*:\s*\{([^}]+)\}/su)?.[1];if(!block)return undefined;
+  const stringField=(key:string)=>block.match(new RegExp(`\\b${key}\\s*:\\s*["']([^"']*)["']`))?.[1];
+  const numberField=(key:string)=>{const value=block.match(new RegExp(`\\b${key}\\s*:\\s*(-?\\d+)`))?.[1];return value===undefined?undefined:Number(value);};
+  const title=stringField("title");const description=stringField("description");const width=numberField("width");const height=numberField("height");const x=numberField("x");const y=numberField("y");const anchor=stringField("anchor");
+  if(!title||!description||width===undefined||height===undefined||x===undefined||y===undefined||!anchor)return undefined;
+  return {title,description,width,height,x,y,anchor};
+}
 async function widgetCommitHistory(widgetId: string): Promise<string[]> {
   if (!/^[a-z0-9-]{1,80}$/u.test(widgetId) || widgetRoot !== path.join(root, "widgets")) return [];
   try {
@@ -100,7 +108,7 @@ const blocklist = [/\bmalware\b/iu, /\bsteal\s+(?:a\s+)?token\b/iu, /\bkeylogger
 
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "32kb" }));
+app.use(express.json({ limit: "256kb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
@@ -124,6 +132,50 @@ app.get("/api/state", async (_req, res) => {
   res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, codexVerification: store.codexVerification });
 });
 app.get("/api/library", (_req, res) => res.json(store.library));
+app.get("/api/widgets/:id/export", async (req, res) => {
+  const widget=store.widgets.find((item)=>item.id===req.params.id);
+  if(!widget||!/^[a-z0-9-]{1,80}$/u.test(widget.id))return res.status(404).json({error:"Widget not found."});
+  try {
+    const code=await readFile(path.join(widgetRoot,widget.id,"index.js"),"utf8");
+    const declaredMeta=parseDeclaredMeta(code);
+    if(!declaredMeta)return res.status(409).json({error:"Widget metadata is not declared in an exportable static form."});
+    const libraryEntry=store.library.find((item)=>item.widgetId===widget.id);
+    const request=store.requestHistory.find((item)=>item.widgetId===widget.id);
+    const artifact={format:"sfwidget",version:1,id:widget.id,meta:declaredMeta,code,originalPrompt:libraryEntry?.originalPrompt||request?.text||"Imported StreamForge widget.",creator:libraryEntry?.creator||"StreamForge",widgetVersion:(await widgetCommitHistory(widget.id)).length};
+    res.setHeader("Content-Type","application/json; charset=utf-8");res.setHeader("Content-Disposition",`attachment; filename="${widget.id}.sfwidget"`);res.send(JSON.stringify(artifact,null,2));
+  } catch { res.status(404).json({error:"Widget source is unavailable."}); }
+});
+app.post("/api/library/import", async (req, res) => {
+  const artifact=req.body;
+  if(!artifact||artifact.format!=="sfwidget"||artifact.version!==1||typeof artifact.code!=="string")return res.status(400).json({error:"Invalid .sfwidget file: expected format sfwidget version 1 with widget code."});
+  if(artifact.code.length>100_000)return res.status(400).json({error:"Widget code exceeds the 100 KB import limit."});
+  const codeHash=createHash("sha256").update(artifact.code).digest("hex");
+  const duplicate=store.library.find((entry)=>entry.codeHash===codeHash);
+  if(duplicate)return res.json({ok:true,alreadyImported:true,entry:duplicate});
+  const meta=artifact.meta as Record<string,unknown>|undefined;
+  const declaredMeta=parseDeclaredMeta(artifact.code);
+  const title=typeof meta?.title==="string"?meta.title.trim():"";
+  const description=typeof meta?.description==="string"?meta.description.trim():"";
+  const width=Number(meta?.width);const height=Number(meta?.height);const x=Number(meta?.x);const y=Number(meta?.y);
+  const anchor=typeof meta?.anchor==="string"?meta.anchor:"";
+  if(!title||title.length>80||!description||description.length>240||!Number.isInteger(width)||width<100||width>1920||!Number.isInteger(height)||height<60||height>1080||!Number.isInteger(x)||x<0||!Number.isInteger(y)||y<0||x+width>1920||y+height>1080||!["top-left","top-right","bottom-left","bottom-right","center"].includes(anchor))return res.status(400).json({error:"Invalid widget metadata: check title, description, size, position and anchor."});
+  if(!declaredMeta||JSON.stringify(declaredMeta)!==JSON.stringify({title,description,width,height,x,y,anchor}))return res.status(400).json({error:"Widget metadata does not match the source declaration."});
+  const result=await checkWidgetSource(artifact.code);
+  if(!result.ok)return res.status(400).json({error:`Unsafe widget import: ${result.reason||"source checks failed"}`});
+  const widgetId=`import-${randomUUID().slice(0,8)}`;const importId=randomUUID();const draftDir=path.join(dataDir,"drafts",importId);let promoted=false;
+  try{
+    await mkdir(draftDir,{recursive:true});const draftPath=path.join(draftDir,"index.js");await writeWidgetFile(draftPath,artifact.code,{mode:0o600});
+    const targetDir=path.join(widgetRoot,widgetId);await mkdir(targetDir,{recursive:true});const target=path.join(targetDir,"index.js");const temp=`${target}.${importId}.tmp`;await copyFile(draftPath,temp);await chmod(temp,0o600);await rename(temp,target);promoted=true;
+    if(widgetRoot===path.join(root,"widgets")){execFileSync("git",["add","--",`widgets/${widgetId}/index.js`],{cwd:root,stdio:"ignore"});execFileSync("git",["commit","-m",`Import widget ${widgetId}`],{cwd:root,stdio:"ignore"});}
+    const safeCreator=typeof artifact.creator==="string"?artifact.creator.replace(/[^\p{L}\p{N} _.-]/gu,"").trim().slice(0,40):"Imported";
+    const entry:LibraryEntry={id:widgetId,widgetId,title,description,originalPrompt:typeof artifact.originalPrompt==="string"?artifact.originalPrompt.slice(0,300):"Imported StreamForge widget.",creator:safeCreator||"Imported",codeHash};
+    store.library.push(entry);store.widgets.push({id:widgetId,title,description,width,height,x,y,anchor,enabled:true});await persist();publish({type:"widgets",widgets:store.widgets});
+    res.status(201).json({ok:true,entry,checks:result.checks});
+  }catch{
+    if(promoted)await rm(path.join(widgetRoot,widgetId),{recursive:true,force:true}).catch(()=>{});
+    res.status(500).json({error:"Widget passed checks but could not be promoted; temporary files were rolled back."});
+  }finally{await rm(draftDir,{recursive:true,force:true}).catch(()=>{});}
+});
 app.post("/api/library/:id/add", async (req, res) => {
   const entry = store.library.find((item) => item.id === req.params.id);
   if (!entry) return res.status(404).json({error:"Library widget not found."});
