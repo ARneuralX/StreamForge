@@ -3,10 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "codex:check": "node scripts/codex-check.mjs"
+    "codex:check": "node scripts/codex-check.mjs",
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node dist/server.js",
+    "restart": "node scripts/restart.mjs"
   },
   "dependencies": {
-    "@openai/codex-sdk": "^0.166.0"
+    "@openai/codex-sdk": "^0.166.0",
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.15.30",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.8.3"
   }
 }

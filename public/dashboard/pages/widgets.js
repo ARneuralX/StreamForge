@@ -1,0 +1,5 @@
+export async function widgets(root, state) {
+  root.innerHTML = `<header class="page-head"><div><h1>Widgets</h1><p>Control what appears on your overlay.</p></div></header><section class="grid">${state.widgets.map((widget)=>`<article class="card widget-card"><div class="widget-preview">${escapeText(widget.title)}<br><span class="small">Live preview</span></div><div><h2>${escapeText(widget.title)}</h2><p>${escapeText(widget.description)}</p><div class="row"><label><input type="checkbox" data-toggle="${widget.id}" ${widget.enabled?"checked":""}> On scene</label><span class="tag">Healthy</span></div></div></article>`).join("") || '<div class="empty">No widgets yet.</div>'}</section>`;
+  root.querySelectorAll("[data-toggle]").forEach((input)=>input.onchange=async()=>{await fetch(`/api/widgets/${input.dataset.toggle}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:input.checked})});});
+}
+function escapeText(value) { const el=document.createElement("span");el.textContent=value;return el.innerHTML; }
