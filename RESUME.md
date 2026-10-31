@@ -28,9 +28,15 @@
 - Verification: `npx tsc --noEmit`, all existing test scripts, `npm run check:library`, `npm run qa:phase3`, `npm run test:preview-backgrounds`, and `npm run qa:ui` passed. UI QA covered 8 pages × 4 viewports plus overlay with 0 browser diagnostics, failed requests, or layout/accessibility findings. Checks used mock/replay and isolated data; no live Twitch traffic or real Codex build.
 - Commit/tag: `UI stage 6: other pages`; `ui-s6`.
 
+## Stage 7 — Overlay HUD and layout
+
+- Done: the overlay measures each visible HUD element and reserves its rectangle when positioning sandboxed widgets. This includes mode/remix/runner pills, hype, simulated badge, Up Next, build feed, runtime-error toast and scene banner. The top HUD elements now occupy distinct positions; Up Next and the build feed sit in compact reserved zones, with panels stacked on narrow screens.
+- Layout retains the 1920×1080 coordinate system, honors manual positions when they do not collide, and keeps the canvas transparent by default. Existing `bg`, `safeMode`, `feed` and `recap` URL parameters and sandbox attributes are preserved. Safe Mode and reduced-motion styles keep overlay transitions static when requested.
+- Verification: `npx tsc --noEmit`, all existing test scripts, `npm run check:library`, `npm run qa:phase3`, `npm run test:preview-backgrounds`, and `npm run qa:ui` passed. UI QA covered 8 pages × 4 viewports plus the transparent overlay; 0 browser diagnostics, failed requests, or layout/accessibility findings. A nine-widget layout fixture placed all nine widgets around the mode/hint zones and Up Next.
+- Commit/tag: `UI stage 7: overlay HUD and layout`; `ui-s7`.
+
 ## Next
 
-- Stage 7: reserve overlay HUD space and prevent widget collisions.
 - Stage 8: UI smoke, expanded QA, screenshots, documentation and regression.
 
 ## Known prerequisite gap
