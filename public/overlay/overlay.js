@@ -19,6 +19,8 @@ function positionFrames() {
 }
 async function load() {
   const data = await (await fetch("/api/state")).json();
+  const mode=data.settings.buildMode;
+  document.querySelector("#badge").textContent=mode==="replay"?"DEMO MODE · recorded build":mode==="codex"?"LIVE BUILD MODE":"MOCK MODE · simulated events";
   const region = document.querySelector("#widgets"); region.replaceChildren(); frames = new Map();
   layoutItems = data.widgets.filter((item)=>item.enabled);
   for (const widget of layoutItems) {
@@ -42,13 +44,14 @@ socket.addEventListener("message", (event) => {
   }
   if (message.type === "widgets") load();
   if (message.type === "event" && document.querySelector("#feed").hidden === false) {
-    const item=document.createElement("div");item.className="feed-item";item.textContent=`SIMULATED · ${message.event.type} event received`;document.querySelector("#feed-items").prepend(item);
+    const item=document.createElement("div");item.className="feed-item";item.textContent=`${message.event.simulated?"SIMULATED · ":""}${message.event.type} event received`;document.querySelector("#feed-items").prepend(item);
   }
   if (message.type === "buildFeed" && document.querySelector("#feed").hidden === false) {
     const labels={Received:10,Approved:20,Planning:35,"Writing code":55,"Safety checks":80,Live:100,"Rolled back":100};
     const item=document.createElement("div");item.className="feed-item";
     const elapsed=Math.max(0,Math.floor((Date.now()-Date.parse(message.request.createdAt))/1000));
-    item.innerHTML=`<strong>${escapeText(message.request.text)}</strong><br><span>${escapeText(message.request.requester)} · ${escapeText(message.stage)} · ${elapsed}s</span><div>${escapeText(message.detail)}</div><div class="progress"><i style="width:${labels[message.stage]||15}%"></i></div>`;
+    const checks=message.checks?`<div class="small">${Object.entries(message.checks).map(([name,ok])=>`${ok?"✓":"○"} ${escapeText(({syntax:"Syntax",network:"No network access",forbiddenApis:"No forbidden APIs",mockMount:"Mounts without errors"})[name]||name)}`).join(" · ")}</div>`:"";
+    item.innerHTML=`<strong>${escapeText(message.request.text)}</strong><br><span>${escapeText(message.request.requester)} · ${escapeText(message.stage)} · ${elapsed}s</span><div>${escapeText(message.detail)}</div>${checks}<div class="progress"><i style="width:${labels[message.stage]||15}%"></i></div>`;
     document.querySelector("#feed-items").prepend(item);
   }
   if (message.type === "request" || message.type === "queue") load();

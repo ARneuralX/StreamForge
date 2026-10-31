@@ -36,3 +36,5 @@ Widget modules export `default { meta, mount(api) }`; the current contract is do
 `npx tsc --noEmit` passed. Mock server checks covered queue behavior and restart persistence; Chrome screenshots confirmed the Overview and widget frames render. The Codex SDK gate was passed by the user. OAuth token exchange, IRC/EventSub connections, the real Codex build pipeline and remaining phase features are still being implemented and must not be considered ready yet.
 
 The Phase 2A mock queue now stores requests, history, votes and widget metadata in ignored JSON state. Approving a request runs a fixed mock fixture through syntax, static safety and mock-mount checks; it does not invoke Codex or convert the request into custom code. The overlay layout engine packs declared widget sizes into the 1920 × 1080 canvas and supports saved manual coordinates.
+
+To preview the current overlay, use `http://localhost:3000/overlay/?feed=1`. Build requests and vote counts appear in the Up next panel. Widget positions can be saved in the Widgets page using canvas coordinates; the layout engine shifts other widgets around them.
