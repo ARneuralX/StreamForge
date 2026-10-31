@@ -38,3 +38,10 @@
 - [ ] Real Twitch chat / IRC connection: not implemented; no real Twitch traffic was used.
 - Known issues: live OAuth token exchange, IRC/EventSub connections and real Codex builds remain unavailable. The mock runner is deterministic; build retry/timeout settings are saved for a future live runner. Voice recognition rendering was visible in Chrome, but audio capture and permission behavior were not exercised.
 - Phase 3 complete. Next: audit Phase 4 requirements.
+
+## Phase 4
+
+- Audit: existing sources include the WebSocket event bus, mock event paths, queue/vote/settings persistence, theme tokens/presets/kits, static widget scan, VM mock mount, Git rollback and Step 0 history. There is no existing Passport, Safe Mode, hype aggregator, session/recap store, scene preset switcher, Auto-Clips integration, multilingual normalization or Demo Director. Extend the shared API and persist new session/scene state under ignored `data/`; keep live Twitch/Codex paths disabled for this run.
+- Stage 1 done: server-computed Passport cards and export metadata report declared events/capabilities, widget dimensions/anchor, static scan flags and heuristic motion risk. Safe Mode works in the dashboard, overlay query and moderator command; runtime API exposes the level/scale and starter effects reduce motion with no more than three celebration updates per second. Dashboard checks the current theme text/background contrast and offers an automatic text-color repair. `npm run test:passport`, `npm run test:widgets`, `npx tsc --noEmit`, JavaScript syntax checks and `git diff --check` pass. All five built-in theme text/background pairs exceed 4.5:1.
+- Known limitation: Passport motion classification is a static heuristic, not a guarantee about arbitrary widget behavior. Contrast repair checks the declared theme text/background colors.
+- Next: implement Phase 4 Stage 2 hype aggregation.

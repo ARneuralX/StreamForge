@@ -25,6 +25,10 @@ The request queue supports `!build <idea>`, `!remix <widget> <change>`, `!vote N
 
 Five validated presets—Halloween, Neon, Cozy, Retro and Clean—update active overlay widgets without a rebuild. Theme suggestions choose a closest preset while Codex generation is unavailable. Three kits add existing Library widgets and apply a theme: Halloween, Cozy stream and Neon arcade. The Widget API documents validated theme tokens and compatibility.
 
+## Widget Passport and Safe Mode
+
+Widgets and Library cards show a server-computed Passport with detected event/API use, declared size and anchor, the current scan summary, and a motion-risk heuristic. It is informational, not a certification. Safe Mode is available as Off, Reduced or Minimal in Overview, via moderator `!safe-mode reduced`, or as an overlay URL override such as `?safeMode=minimal`. It scales down supported motion. Theme text contrast is checked against the 4.5:1 WCAG AA threshold, with an auto-fix for the text token when needed.
+
 ## Templates
 
 Overview's **Start a build** gallery includes twelve categorized prompts. **Edit prompt** loads a prompt into the request box, theme chips append a visual hint, **Surprise me** selects a prompt, and **Build with Codex** queues the editable text through the approval flow. **Add instantly** enables the associated prebuilt Library widget where one exists.

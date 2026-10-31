@@ -17,7 +17,7 @@ async function render() {
   const page = pages[key] || pages.overview;
   links.forEach((link) => link.setAttribute("aria-current", link.dataset.page === key ? "page" : "false"));
   root.replaceChildren();
-  try { await page(root, state, render); root.querySelectorAll("iframe").forEach((frame)=>frame.addEventListener("load",()=>{if(state.settings.themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:state.settings.themeTokens},"*");})); }
+  try { await page(root, state, render); root.querySelectorAll("iframe").forEach((frame)=>frame.addEventListener("load",()=>{if(state.settings.themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:state.settings.themeTokens},"*");frame.contentWindow?.postMessage({kind:"streamforge:safe-mode",level:state.settings.safeMode||"off"},"*");})); }
   catch { root.innerHTML = '<section class="card"><h2>This section could not load</h2><p>Please retry.</p><button id="retry">Retry</button></section>'; root.querySelector("#retry").onclick = render; }
 }
 window.addEventListener("hashchange", render);

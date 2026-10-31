@@ -2,6 +2,7 @@ import { computeLayout } from "/overlay/layout.js";
 
 const params = new URLSearchParams(location.search);
 const bg = params.get("bg");
+let safeModeLevel=["off","reduced","minimal"].includes(params.get("safeMode"))?params.get("safeMode"):"off";
 const backgrounds = { dark: "#17151f", bright: "#f5f5f5", green: "#00ff00", transparent: "transparent" };
 if (bg === "checker") document.body.style.backgroundImage = "conic-gradient(#777 25%, #fff 0 50%, #777 0 75%, #fff 0) 0 / 24px 24px";
 else if (backgrounds[bg]) document.body.style.background = backgrounds[bg];
@@ -24,6 +25,7 @@ async function load() {
  try {
   const data = await (await fetch("/api/state")).json();
   themeTokens=data.settings.themeTokens;
+  if(!["off","reduced","minimal"].includes(params.get("safeMode")))safeModeLevel=data.settings.safeMode||"off";
   const mode=data.settings.buildMode;
   document.querySelector("#badge").textContent=mode==="replay"?"DEMO MODE · recorded build":mode==="codex"?"LIVE BUILD MODE":"MOCK MODE · simulated events";
   const region = document.querySelector("#widgets"); region.replaceChildren(); frames = new Map();
@@ -32,7 +34,7 @@ async function load() {
     const frame = document.createElement("iframe");
     frame.className = "widget-frame"; frame.title = widget.title;
     frame.setAttribute("sandbox", "allow-scripts"); frame.src = `/widgets/frame.html?id=${encodeURIComponent(widget.id)}`;
-    frame.addEventListener("load",async()=>{if(themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");try{const saved=await(await fetch(`/api/widgets/${encodeURIComponent(widget.id)}/storage`)).json();frame.contentWindow?.postMessage({kind:"streamforge:storage:init",storage:saved.storage||{}},"*");}catch{/* widgets keep their safe defaults if storage is unavailable */}});
+    frame.addEventListener("load",async()=>{if(themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");frame.contentWindow?.postMessage({kind:"streamforge:safe-mode",level:safeModeLevel},"*");try{const saved=await(await fetch(`/api/widgets/${encodeURIComponent(widget.id)}/storage`)).json();frame.contentWindow?.postMessage({kind:"streamforge:storage:init",storage:saved.storage||{}},"*");}catch{/* widgets keep their safe defaults if storage is unavailable */}});
     region.append(frame); frames.set(widget.id, frame);
   }
   positionFrames();
@@ -53,6 +55,7 @@ socket.addEventListener("message", (event) => {
     for (const frame of frames.values()) frame.contentWindow?.postMessage({kind:"streamforge:event",event:message.event},"*");
   }
   if(message.type==="theme"){themeTokens=message.tokens;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");}
+  if(message.type==="safeMode"){safeModeLevel=message.level;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:safe-mode",level:safeModeLevel},"*");}
   if (message.type === "widgets") load();
   if (message.type === "event" && document.querySelector("#feed").hidden === false) {
     const item=document.createElement("div");item.className="feed-item";item.textContent=`${message.event.simulated?"SIMULATED · ":""}${message.event.type} event received`;document.querySelector("#feed-items").prepend(item);

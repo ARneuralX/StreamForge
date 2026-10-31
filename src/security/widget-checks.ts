@@ -33,6 +33,9 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
     const listeners = new Map<string, Function[]>();
     const api = {
       root: makeElement(),
+      safeMode: "off",
+      motionScale: 1,
+      hype: { value: 0, level: "calm", trend: "steady" },
       theme: { accent: "#a9f5dc", accent2: "#aa8aff", background: "#17151f", text: "#f6f2ff", glow: "#a9f5dc", radius: 16, fontStack: "system-ui", animationSpeed: 1 },
       on(name: string, handler: Function) { listeners.set(name, [...(listeners.get(name) || []), handler]); },
       sound: { play() {} }, timers: { setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {} }, storage: { get() { return null; }, set() {} },
@@ -40,7 +43,7 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
     const mountResult = widget.mount(api);
     if (mountResult instanceof Promise) await mountResult;
     for (const [eventName, handlers] of listeners) {
-      for (const handler of handlers) await handler({ type: eventName, message: "!attack", name: "Simulated viewer", viewers: 8, payload: {} });
+      for (const handler of handlers) await handler({ type: eventName, message: "!attack", name: "Simulated viewer", user: "Simulated viewer", viewers: 8, isMod: true, simulated: true, level:"reduced", motionScale:.5, payload: {} });
     }
     return { ok: true, checks: { syntax: true, network: true, forbiddenApis: true, mockMount: true } };
   } catch {

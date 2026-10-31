@@ -10,11 +10,13 @@ import { writeFile as writeWidgetFile } from "node:fs/promises";
 import { WebSocketServer, WebSocket } from "ws";
 import { checkWidgetSource } from "./security/widget-checks.js";
 import { validateRequestText } from "./security/request-checks.js";
+import { createWidgetPassport, type WidgetPassport } from "./security/passport.js";
+import { contrastRatio, nearestAccessibleText } from "./security/contrast.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
-type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean };
-type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string };
+type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean; passport?: WidgetPassport };
+type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string; passport?: WidgetPassport };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; widgetStorage?: Record<string, Record<string, unknown>>; codexVerification?: { time: string; ok: boolean; error?: string } };
 type ErrorCode = "CODEX_NOT_LOGGED_IN" | "CODEX_LIMIT_REACHED" | "CODEX_TIMEOUT" | "CODEX_BAD_OUTPUT" | "CHECKS_FAILED" | "ROLLED_BACK" | "TWITCH_TOKEN_EXPIRED" | "CHAT_DISCONNECTED" | "EVENTSUB_DISCONNECTED" | "QUEUE_FULL" | "REQUEST_REJECTED" | "WIDGET_RUNTIME_ERROR";
 const errorMessages: Record<ErrorCode, string> = {
@@ -87,6 +89,15 @@ store.widgetStorage ||= {};
 store.library = [...librarySeed.map((seed) => store.library.find((entry) => entry.id === seed.id) || seed), ...store.library.filter((entry) => !librarySeed.some((seed) => seed.id === entry.id))];
 store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
 if (!store.settings.themeTokens || typeof store.settings.themeTokens !== "object") store.settings.themeTokens = themePresets.Clean;
+store.settings.safeMode ||= "off";
+store.settings.hypeSensitivity ||= "normal";
+store.settings.manualHypeBoost ??= 0;
+store.settings.hypeMuted ??= false;
+store.settings.hypeReactive ??= false;
+store.settings.overlayHypeMeter ??= false;
+store.settings.includeChatterNames ??= false;
+store.settings.nonEnglishManualApproval ??= true;
+store.settings.autoClipsEnabled ??= false;
 
 async function persist(): Promise<void> {
   const tempPath = `${storePath}.${randomUUID()}.tmp`;
@@ -125,6 +136,22 @@ async function widgetCommitHistory(widgetId: string): Promise<string[]> {
     return execFileSync("git", ["log", "--follow", "--format=%H", "--", `widgets/${widgetId}/index.js`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\r?\n/u).filter(Boolean);
   } catch { return []; }
 }
+async function widgetPassport(widget:WidgetMeta,sourceOverride?:string,scanOverride?:Awaited<ReturnType<typeof checkWidgetSource>>):Promise<WidgetPassport>{
+  if(!/^[a-z0-9-]{1,80}$/u.test(widget.id))throw new Error("invalid_widget_id");
+  const source=sourceOverride??await readFile(path.join(widgetRoot,widget.id,"index.js"),"utf8");
+  const declared=parseDeclaredMeta(source)||{width:widget.width,height:widget.height,anchor:widget.anchor};
+  const css=await readFile(path.join(widgetRoot,"widget.css"),"utf8").catch(()=>"");
+  const scan=scanOverride??await checkWidgetSource(source);
+  return createWidgetPassport(source,css,declared,scan);
+}
+async function refreshWidgetPassport(widget:WidgetMeta,sourceOverride?:string,scanOverride?:Awaited<ReturnType<typeof checkWidgetSource>>):Promise<WidgetPassport>{
+  const passport=await widgetPassport(widget,sourceOverride,scanOverride);widget.passport=passport;
+  const entry=store.library.find((item)=>item.widgetId===widget.id);if(entry)entry.passport=passport;
+  return passport;
+}
+for(const widget of store.widgets){try{await refreshWidgetPassport(widget);}catch{widget.passport=undefined;}}
+for(const entry of store.library){const widget=store.widgets.find((item)=>item.id===entry.widgetId);if(widget?.passport)entry.passport=widget.passport;}
+if(store.widgets.some((widget)=>widget.passport))await persist();
 const recentBuilds = new Map<string, number>();
 const safeDrafts = new Map<string, string>();
 const anonymousSessionSalt=randomUUID();
@@ -152,7 +179,8 @@ app.use("/widgets", express.static(widgetRoot, {
 app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: process.env.TWITCH_LIVE_ENABLED === "true", chat: "needs_setup", eventSub: "needs_setup", tokenExpiry: "not_connected" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
-  res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, codexVerification: store.codexVerification });
+  const tokens=store.settings.themeTokens as ThemeTokens;const themeContrast=validTheme(tokens)?{ratio:Number(contrastRatio(tokens.text,tokens.background).toFixed(2)),passes:contrastRatio(tokens.text,tokens.background)>=4.5}:null;
+  res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, themeContrast, codexVerification: store.codexVerification });
 });
 app.get("/api/widgets/:id/storage",(req,res)=>{
   if(!store.widgets.some((widget)=>widget.id===req.params.id))return res.status(404).json({error:"Widget not found."});
@@ -189,6 +217,15 @@ app.patch("/api/theme", async (req,res)=>{
   if(!validTheme(tokens))return res.status(400).json({error:"Theme tokens are invalid. Use safe hex colors, bounded values and an approved system font."});
   applyTheme(preset,tokens);await persist();res.json({ok:true,preset,tokens});
 });
+app.post("/api/theme/contrast-fix",async(_req,res)=>{
+  const tokens=store.settings.themeTokens as ThemeTokens;if(!validTheme(tokens))return res.status(409).json({error:"Current theme tokens are invalid."});
+  const fixed={...tokens,text:nearestAccessibleText(tokens.text,tokens.background)};applyTheme(String(store.settings.themePreset||"Clean"),fixed);await persist();res.json({ok:true,tokens:fixed,ratio:Number(contrastRatio(fixed.text,fixed.background).toFixed(2))});
+});
+const motionScales={off:1,reduced:.5,minimal:.15} as const;
+app.patch("/api/safe-mode",async(req,res)=>{
+  const level=req.body?.level as keyof typeof motionScales;if(!Object.hasOwn(motionScales,level))return res.status(400).json({error:"Choose Safe Mode off, reduced or minimal."});
+  store.settings.safeMode=level;await persist();publish({type:"safeMode",level,motionScale:motionScales[level]});res.json({ok:true,level,motionScale:motionScales[level]});
+});
 app.post("/api/theme/generate", async(req,res)=>{
   const prompt=typeof req.body?.prompt==="string"?req.body.prompt.slice(0,200):"";
   if(!prompt.trim())return res.status(400).json({error:"Describe the theme you want."});
@@ -212,9 +249,10 @@ app.get("/api/widgets/:id/export", async (req, res) => {
     const code=await readFile(path.join(widgetRoot,widget.id,"index.js"),"utf8");
     const declaredMeta=parseDeclaredMeta(code);
     if(!declaredMeta)return res.status(409).json({error:"Widget metadata is not declared in an exportable static form."});
+    const passport=await widgetPassport(widget,code);
     const libraryEntry=store.library.find((item)=>item.widgetId===widget.id);
     const request=store.requestHistory.find((item)=>item.widgetId===widget.id);
-    const artifact={format:"sfwidget",version:1,id:widget.id,meta:declaredMeta,code,originalPrompt:libraryEntry?.originalPrompt||request?.text||"Imported StreamForge widget.",creator:libraryEntry?.creator||"StreamForge",widgetVersion:(await widgetCommitHistory(widget.id)).length};
+    const artifact={format:"sfwidget",version:1,id:widget.id,meta:declaredMeta,code,originalPrompt:libraryEntry?.originalPrompt||request?.text||"Imported StreamForge widget.",creator:libraryEntry?.creator||"StreamForge",widgetVersion:(await widgetCommitHistory(widget.id)).length,passport};
     res.setHeader("Content-Type","application/json; charset=utf-8");res.setHeader("Content-Disposition",`attachment; filename="${widget.id}.sfwidget"`);res.send(JSON.stringify(artifact,null,2));
   } catch { res.status(404).json({error:"Widget source is unavailable."}); }
 });
@@ -235,14 +273,15 @@ app.post("/api/library/import", async (req, res) => {
   if(!declaredMeta||JSON.stringify(declaredMeta)!==JSON.stringify({title,description,width,height,x,y,anchor}))return res.status(400).json({error:"Widget metadata does not match the source declaration."});
   const result=await checkWidgetSource(artifact.code);
   if(!result.ok)return res.status(400).json({error:`Unsafe widget import: ${result.reason||"source checks failed"}`});
+  const passport=await widgetPassport({id:"passport-temp",title,width,height,x,y,anchor,description,enabled:true},artifact.code,result);
   const widgetId=`import-${randomUUID().slice(0,8)}`;const importId=randomUUID();const draftDir=path.join(dataDir,"drafts",importId);let promoted=false;
   try{
     await mkdir(draftDir,{recursive:true});const draftPath=path.join(draftDir,"index.js");await writeWidgetFile(draftPath,artifact.code,{mode:0o600});
     const targetDir=path.join(widgetRoot,widgetId);await mkdir(targetDir,{recursive:true});const target=path.join(targetDir,"index.js");const temp=`${target}.${importId}.tmp`;await copyFile(draftPath,temp);await chmod(temp,0o600);await rename(temp,target);promoted=true;
     if(widgetRoot===path.join(root,"widgets")){execFileSync("git",["add","--",`widgets/${widgetId}/index.js`],{cwd:root,stdio:"ignore"});execFileSync("git",["commit","-m",`Import widget ${widgetId}`],{cwd:root,stdio:"ignore"});}
     const safeCreator=typeof artifact.creator==="string"?artifact.creator.replace(/[^\p{L}\p{N} _.-]/gu,"").trim().slice(0,40):"Imported";
-    const entry:LibraryEntry={id:widgetId,widgetId,title,description,originalPrompt:typeof artifact.originalPrompt==="string"?artifact.originalPrompt.slice(0,300):"Imported StreamForge widget.",creator:safeCreator||"Imported",codeHash};
-    store.library.push(entry);store.widgets.push({id:widgetId,title,description,width,height,x,y,anchor,enabled:true});await persist();publish({type:"widgets",widgets:store.widgets});
+    const entry:LibraryEntry={id:widgetId,widgetId,title,description,originalPrompt:typeof artifact.originalPrompt==="string"?artifact.originalPrompt.slice(0,300):"Imported StreamForge widget.",creator:safeCreator||"Imported",codeHash,passport};
+    store.library.push(entry);store.widgets.push({id:widgetId,title,description,width,height,x,y,anchor,enabled:true,passport});await persist();publish({type:"widgets",widgets:store.widgets});
     res.status(201).json({ok:true,entry,checks:result.checks});
   }catch{
     if(promoted)await rm(path.join(widgetRoot,widgetId),{recursive:true,force:true}).catch(()=>{});
@@ -345,6 +384,7 @@ async function mockBuild(request: Request): Promise<void> {
       const metadata: WidgetMeta = { id: widgetId, title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right", enabled: true };
       store.widgets.push(metadata);
     }
+    const promotedWidget=store.widgets.find((item)=>item.id===widgetId);if(promotedWidget){promotedWidget.passport=await widgetPassport(promotedWidget,source,result);const libraryEntry=store.library.find((item)=>item.widgetId===widgetId);if(libraryEntry)libraryEntry.passport=promotedWidget.passport;}
     setState(request, "live"); buildFeed(request, "Live", "Widget passed checks and is ready on the overlay", result.checks);
     await persist(); publish({ type: "widgets", widgets: store.widgets });
   } catch {
@@ -389,6 +429,7 @@ async function undoWidget(widgetId: string): Promise<{ ok: boolean; reason?: str
     execFileSync("git", ["add", "--", relativePath], { cwd: root, stdio: "ignore" });
     return { ok: false, reason: "Version rollback could not be committed; the current widget was restored." };
   }
+  widget.passport=await widgetPassport(widget,source,check);const libraryEntry=store.library.find((item)=>item.widgetId===widgetId);if(libraryEntry)libraryEntry.passport=widget.passport;await persist();
   publish({ type: "widgets", widgets: store.widgets });
   return { ok: true };
 }
@@ -458,6 +499,8 @@ app.post("/api/chat", async (req, res) => {
   }
   const themeMatch=/^!theme\s+(Halloween|Neon|Cozy|Retro|Clean)$/iu.exec(message);
   if(themeMatch&&req.body?.isMod===true){const preset=Object.keys(themePresets).find((name)=>name.toLowerCase()===themeMatch[1].toLowerCase())!;applyTheme(preset,themePresets[preset as keyof typeof themePresets]);await persist();}
+  const safeModeMatch=/^!safe-mode\s+(off|reduced|minimal)$/iu.exec(message);
+  if(safeModeMatch&&req.body?.isMod===true){const level=safeModeMatch[1].toLowerCase() as keyof typeof motionScales;store.settings.safeMode=level;await persist();publish({type:"safeMode",level,motionScale:motionScales[level]});}
   res.json({ ok: true });
 });
 app.post("/api/requests/:id/:action", async (req, res) => {

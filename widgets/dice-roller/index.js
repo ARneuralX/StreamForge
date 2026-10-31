@@ -9,15 +9,14 @@ export default {
     fireworks.className = "fireworks";
     fireworks.setAttribute("aria-live", "polite");
     api.root.append(title, result, fireworks);
+    let lastFlashAt=0;
     api.on("chat", (event) => {
       const message = String(event.message || "").trim().toLowerCase();
       if (!message.startsWith("!roll")) return;
       const roll = Math.floor(Math.random() * 20) + 1;
       result.textContent = `Rolled ${roll}${roll === 20 ? " — Critical! ✨" : ""}`;
       if (roll === 20) {
-        fireworks.textContent = "🎆 ✦ ✨ ✦ 🎇";
-        fireworks.className = "fireworks active";
-        api.sound?.play?.("sparkle");
+        const motionScale=Number.isFinite(api.motionScale)?api.motionScale:1;if(Date.now()-lastFlashAt>=333&&motionScale>.15){lastFlashAt=Date.now();fireworks.textContent=motionScale<.75?"✦":"🎆 ✦ ✨ ✦ 🎇";fireworks.className="fireworks active";api.sound?.play?.("sparkle");}
       } else {
         fireworks.textContent = "";
         fireworks.className = "fireworks";

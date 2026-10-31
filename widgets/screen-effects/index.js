@@ -5,11 +5,11 @@ export default {
     const message = document.createElement("p"); message.textContent = "The next celebration starts here";
     const effect = document.createElement("div"); effect.className = "celebration";
     api.root.append(title, message, effect);
+    let lastFlashAt=0;
     for (const type of ["follow", "sub", "raid"]) api.on(type, (event) => {
       message.textContent = `${type} celebration${event?.name ? ` for ${String(event.name)}` : "!"} ✨`;
-      effect.textContent = type === "raid" ? "🌧️ ✨ 🌧️ ✨ 🌧️" : type === "sub" ? "🎆 ✦ 🎇 ✦ 🎆" : "🎉 ✨ 🎊 ✨ 🎉";
-      effect.className = `celebration ${type}`;
-      api.sound?.play?.(type === "raid" ? "fanfare" : "sparkle");
+      const now=Date.now();
+      if(now-lastFlashAt>=333){lastFlashAt=now;const minimal=api.motionScale<=.15;effect.textContent=minimal?"✨":type === "raid" ? "🌧️ ✨ 🌧️ ✨ 🌧️" : type === "sub" ? "🎆 ✦ 🎇 ✦ 🎆" : "🎉 ✨ 🎊 ✨ 🎉";effect.className=minimal?"celebration":`celebration ${type}`;api.sound?.play?.(type === "raid" ? "fanfare" : "sparkle");}
     });
   },
 };
