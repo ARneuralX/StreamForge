@@ -18,7 +18,7 @@ This summary follows the repository commit history. It distinguishes the SDK ver
 | Phase 3 stage 4 | `bdf5110` | Added twelve validated prompt templates, editable prompt selection, style chips and instant Library actions. |
 | Phase 3 stage 5 | `85f4365` | Added the Chat Runner game, rate-limited commands, anonymous player scores and host-mediated widget storage. |
 | Phase 3 stage 6 | `b3a486d` | Added feature-detected push-to-talk voice prompts with an explicit edit-and-submit step. |
-| Phase 3 stage 7 | See the closing Phase 3 entry in `git log` | Updated feature documentation and added the isolated end-to-end browser smoke. |
+| Phase 3 stage 7 | `1881a6c` | Updated feature documentation and added the isolated end-to-end browser smoke. |
 
 ## Safety model in the repository
 
