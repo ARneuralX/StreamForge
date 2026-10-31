@@ -66,3 +66,7 @@ Overview offers Halloween, Neon, Cozy, Retro and Clean themes. The moderator cha
 ## Template gallery
 
 Overview's **Start a build** gallery contains twelve categorized templates. **Edit prompt** loads the prompt into the editable request box, theme chips append a style hint, and **Build with Codex** queues that prompt through the existing approval flow. **Add instantly** activates a matching prebuilt Library widget without a build. **Surprise me** chooses a template prompt. In this development run the mock runner remains active; no real Codex build is invoked.
+
+## Chat Runner
+
+Add **Chat Runner** from the Library. Viewers use `!jump`; scores are kept in a small per-widget store and shown on an anonymous player leaderboard. Per-player cooldowns and a 20-action-per-minute limit apply. Moderators can use `!runner bg night|purple|forest|sunset`, `!runner speed slow|normal|fast`, `!runner obstacle add|remove spike|crate|rock`, and `!runner night on|off`. Invalid values are ignored. Larger redesigns can be requested with the existing Remix flow. The overlay includes a compact command hint.

@@ -7,15 +7,16 @@ const apiTheme={...themeDefaults};
 function applyTheme(tokens){if(!tokens||typeof tokens!=="object")return;const allowedFonts=["system-ui","Arial","Georgia","Trebuchet MS"];for(const key of ["accent","accent2","background","text","glow"])if(typeof tokens[key]!=="string"||!/^#[0-9a-f]{6}$/iu.test(tokens[key]))return;if(!allowedFonts.includes(tokens.fontStack)||!Number.isFinite(tokens.radius)||tokens.radius<0||tokens.radius>40||!Number.isFinite(tokens.animationSpeed)||tokens.animationSpeed<.5||tokens.animationSpeed>2)return;Object.assign(apiTheme,tokens);const styles={accent:tokens.accent,accent2:tokens.accent2,background:tokens.background,text:tokens.text,glow:tokens.glow,radius:`${tokens.radius}px`,fontStack:tokens.fontStack,animationSpeed:String(tokens.animationSpeed)};for(const [key,value] of Object.entries(styles))document.documentElement.style.setProperty(`--${key}`,value);}
 const listeners = new Map();
 const root = document.querySelector("#widget");
+const widgetStorage=new Map();let storageLoaded=false;let resolveStorage;const storageReady=new Promise((resolve)=>{resolveStorage=resolve;window.setTimeout(()=>{storageLoaded=true;resolve();},300);});
 const api = {
   root,
   theme: apiTheme,
   on(name, handler) { if (!listeners.has(name)) listeners.set(name, []); listeners.get(name).push(handler); },
   sound: { play(cue = "sparkle") { try { const AudioContextType=window.AudioContext||window.webkitAudioContext; if(!AudioContextType)return; const context=new AudioContextType(); const oscillator=context.createOscillator(); const gain=context.createGain(); oscillator.type="sine"; oscillator.frequency.value=cue==="fanfare"?660:880; gain.gain.setValueAtTime(.0001,context.currentTime);gain.gain.exponentialRampToValueAtTime(.08,context.currentTime+.025);gain.gain.exponentialRampToValueAtTime(.0001,context.currentTime+.28);oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+.3); } catch { /* browser may block synthesized audio until the viewer interacts */ } } },
   timers: { setTimeout: (...args) => window.setTimeout(...args), clearTimeout: (id) => window.clearTimeout(id), setInterval: (...args) => window.setInterval(...args), clearInterval: (id) => window.clearInterval(id) },
-  storage: { get() { return null; }, set() {} },
+  storage: { get(key="state") { return widgetStorage.get(String(key))??null; }, set(key,value) { const name=String(key);try{const safe=JSON.parse(JSON.stringify(value));widgetStorage.set(name,safe);parent.postMessage({kind:"streamforge:storage:set",id:widgetId,key:name,value:safe},"*");}catch{/* ignore non-JSON storage values */} } },
 };
-window.addEventListener("message",(event)=>{if(event.source===parent&&event.data?.kind==="streamforge:theme")applyTheme(event.data.tokens);});
+window.addEventListener("message",(event)=>{if(event.source!==parent)return;if(event.data?.kind==="streamforge:theme")applyTheme(event.data.tokens);if(event.data?.kind==="streamforge:storage:init"&&!storageLoaded){for(const [key,value]of Object.entries(event.data.storage||{}))widgetStorage.set(key,value);storageLoaded=true;resolveStorage();}});
 function reportError(error) {
   const detail = String(error?.message || "Widget runtime error").replace(/[\r\n]/gu, " ").slice(0, 180);
   parent.postMessage({ kind: "streamforge:runtime-error", id: widgetId, detail }, "*");
@@ -23,6 +24,7 @@ function reportError(error) {
 window.addEventListener("error", (event) => reportError(event.error || new Error(event.message)));
 window.addEventListener("unhandledrejection", (event) => reportError(event.reason));
 window.addEventListener("message", (event) => {
+  if(event.source!==parent)return;
   const message = event.data;
   if (!message || message.kind !== "streamforge:event") return;
   for (const handler of listeners.get(message.event?.type) || []) {
@@ -30,6 +32,7 @@ window.addEventListener("message", (event) => {
   }
 });
 try {
+  await storageReady;
   const widget = await import(`/widgets/${encodeURIComponent(widgetId)}/index.js`);
   if (!widget.default?.meta || typeof widget.default.mount !== "function") throw new Error("Widget export is incomplete.");
   await widget.default.mount(api);

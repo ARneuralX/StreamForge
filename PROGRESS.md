@@ -32,4 +32,6 @@
 - Known limitation: theme suggestions do not call Codex in this development run; they select and report a closest preset.
 - Stage 4 done: added twelve categorized entries in `templates.json`, an Overview gallery with editable prompts, five style chips, Surprise me, queued Build with Codex requests, and instant Library activation where a prebuilt widget exists. Shared request validation now serves the API and template tests. `npm run test:templates` confirms all twelve prompts pass the validator and all instant-add references exist; widget checks and TypeScript pass.
 - Known limitation: template build requests use the existing development mock runner; no real Codex build is started.
-- Next: stage 5 Chat Runner game.
+- Stage 5 done: added a dependency-free Chat Runner with `!jump`, anonymous hashed player labels, a leaderboard, per-player cooldown and minute caps, validated moderator palette/speed/obstacle/night commands, and a recent-change ticker. Persisted per-widget JSON storage travels through the host bridge; the runner settings and top 50 scores survive reload. Library and overlay hints include the commands. Mock event test covers jump score and moderator speed change; isolated API checks verified storage persistence, key validation and 8 KB limits. TypeScript and widget safety/mount checks pass.
+- Known limitation: the “leaderboard” uses anonymous per-session hashed player labels rather than Twitch display names. This preserves the user-identifier redaction policy.
+- Next: stage 6 voice prompts.

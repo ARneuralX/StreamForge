@@ -15,7 +15,7 @@ type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "fa
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
 type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean };
 type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string };
-type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; codexVerification?: { time: string; ok: boolean; error?: string } };
+type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; widgetStorage?: Record<string, Record<string, unknown>>; codexVerification?: { time: string; ok: boolean; error?: string } };
 type ErrorCode = "CODEX_NOT_LOGGED_IN" | "CODEX_LIMIT_REACHED" | "CODEX_TIMEOUT" | "CODEX_BAD_OUTPUT" | "CHECKS_FAILED" | "ROLLED_BACK" | "TWITCH_TOKEN_EXPIRED" | "CHAT_DISCONNECTED" | "EVENTSUB_DISCONNECTED" | "QUEUE_FULL" | "REQUEST_REJECTED" | "WIDGET_RUNTIME_ERROR";
 const errorMessages: Record<ErrorCode, string> = {
   CODEX_NOT_LOGGED_IN: "Codex is not signed in. Sign in, then verify Codex in Settings.", CODEX_LIMIT_REACHED: "Codex has reached its usage limit. Builds are paused; try the Library or Replay mode.", CODEX_TIMEOUT: "The build took too long and was stopped.", CODEX_BAD_OUTPUT: "Codex did not create a usable widget file.", CHECKS_FAILED: "The widget did not pass the safety checks.", ROLLED_BACK: "The widget change was rolled back safely.", TWITCH_TOKEN_EXPIRED: "Your Twitch token expired. Reconnect Twitch.", CHAT_DISCONNECTED: "Twitch chat is disconnected. Check the connection in Settings.", EVENTSUB_DISCONNECTED: "Twitch event updates are disconnected. Reconnect Twitch.", QUEUE_FULL: "The build queue is full. Try again after a request finishes.", REQUEST_REJECTED: "That request needs moderator review.", WIDGET_RUNTIME_ERROR: "A widget stopped after a runtime error. Undo is available from Widgets.",
@@ -61,6 +61,7 @@ const starterWidgets: WidgetMeta[] = [
   { id: "countdown-timer", title: "Chat Countdown", description: "A stream timer that chat can extend.", width: 420, height: 170, x: 0, y: 0, anchor: "bottom-right", enabled: true },
   { id: "screen-effects", title: "Celebration Effects", description: "Celebrate follows, subs and raids.", width: 420, height: 260, x: 0, y: 0, anchor: "center", enabled: true },
   { id: "welcome-banner", title: "Welcome Banner", description: "A friendly message for new followers.", width: 460, height: 110, x: 0, y: 0, anchor: "bottom-right", enabled: true },
+  { id: "chat-runner", title: "Chat Runner", description: "Jump with !jump and help configure the runner with safe chat commands.", width: 480, height: 250, x: 0, y: 0, anchor: "center", enabled: true },
 ];
 const librarySeed = JSON.parse(await readFile(path.join(root, "library/catalog.json"), "utf8")) as LibraryEntry[];
 type BuildTemplate = { id:string;category:string;title:string;description:string;prompt:string;time:string;widgetId?:string };
@@ -73,13 +74,15 @@ const themePresets = {
   Clean: { accent:"#a9f5dc",accent2:"#aa8aff",background:"#17151f",text:"#f6f2ff",glow:"#a9f5dc",radius:16,fontStack:"system-ui",animationSpeed:1 },
 } as const;
 type ThemeTokens = { accent:string;accent2:string;background:string;text:string;glow:string;radius:number;fontStack:string;animationSpeed:number };
-const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0, themePreset:"Clean", themeTokens:themePresets.Clean } };
+const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, widgetStorage:{}, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0, themePreset:"Clean", themeTokens:themePresets.Clean } };
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
 catch { store = defaultStore; }
 if (!Array.isArray(store.widgets) || store.widgets.length === 0) store.widgets = starterWidgets;
+for(const widget of starterWidgets)if(!store.widgets.some((existing)=>existing.id===widget.id))store.widgets.push(widget);
 if (!Array.isArray(store.requestHistory)) store.requestHistory = [...store.requests];
 if (!Array.isArray(store.library)) store.library = librarySeed;
+store.widgetStorage ||= {};
 store.library = [...librarySeed.map((seed) => store.library.find((entry) => entry.id === seed.id) || seed), ...store.library.filter((entry) => !librarySeed.some((seed) => seed.id === entry.id))];
 store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
 if (!store.settings.themeTokens || typeof store.settings.themeTokens !== "object") store.settings.themeTokens = themePresets.Clean;
@@ -148,6 +151,18 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.sett
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
   res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, codexVerification: store.codexVerification });
+});
+app.get("/api/widgets/:id/storage",(req,res)=>{
+  if(!store.widgets.some((widget)=>widget.id===req.params.id))return res.status(404).json({error:"Widget not found."});
+  res.json({storage:store.widgetStorage?.[req.params.id]||{}});
+});
+app.patch("/api/widgets/:id/storage",async(req,res)=>{
+  const id=req.params.id;if(!store.widgets.some((widget)=>widget.id===id))return res.status(404).json({error:"Widget not found."});
+  const key=typeof req.body?.key==="string"?req.body.key:"";const value=req.body?.value;
+  if(!/^[a-z0-9_-]{1,40}$/iu.test(key))return res.status(400).json({error:"Storage keys must use letters, numbers, underscore or hyphen."});
+  let serialized="";try{const encoded=JSON.stringify(value);if(encoded===undefined)return res.status(400).json({error:"Storage value must be JSON data."});serialized=encoded;}catch{return res.status(400).json({error:"Storage value must be JSON data."});}
+  if(serialized.length>8000)return res.status(413).json({error:"Widget storage values must be under 8 KB."});
+  store.widgetStorage||={};store.widgetStorage[id]||={};store.widgetStorage[id][key]=JSON.parse(serialized);await persist();res.json({ok:true});
 });
 app.get("/api/requests/:id/preview", (req, res) => {
   const source = safeDrafts.get(req.params.id);
@@ -397,7 +412,8 @@ app.post("/api/chat", async (req, res) => {
   const userId = typeof req.body?.userId === "string" ? req.body.userId.slice(0, 100) : "";
   const login = typeof req.body?.login === "string" ? req.body.login.slice(0, 40) : "";
   if (!message || !userId || req.body?.isBot === true || /(?:bot|nightbot|streamelements|moobot)$/iu.test(login)) return res.json({ ok: true, ignored: true });
-  publish({ type: "event", event: { type: "chat", payload: { message: redactDisplay(message), user: "Chat viewer" }, simulated: req.body?.simulated === true, at: new Date().toISOString() } });
+  const anonymousPlayer=`Player ${createHash("sha256").update(userId).digest("hex").slice(0,5)}`;
+  publish({ type: "event", event: { type: "chat", payload: { message: redactDisplay(message), user: anonymousPlayer, isMod:req.body?.isMod===true }, simulated: req.body?.simulated === true, at: new Date().toISOString() } });
   const buildMatch = /^!build\s+(.+)$/iu.exec(message);
   if (buildMatch) {
     const lastBuildAt = recentBuilds.get(userId) || 0;
@@ -501,7 +517,7 @@ app.post("/api/simulate/:event", (req, res) => {
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
   const eventType = req.params.event;
   if (eventType === "chat" && Array.isArray(req.body?.commands)) {
-    for (const message of req.body.commands.slice(0,10)) publish({type:"event",event:{type:"chat",payload:{message:String(message).slice(0,100),user:"Simulated viewer"},simulated:true,at:new Date().toISOString()}});
+    for (const message of req.body.commands.slice(0,10)) publish({type:"event",event:{type:"chat",payload:{message:String(message).slice(0,100),user:"Player abc12",isMod:true},simulated:true,at:new Date().toISOString()}});
   } else {
     const event = { type: eventType, payload: req.body ?? {}, simulated: true, at: new Date().toISOString() };
     publish({ type: "event", event });

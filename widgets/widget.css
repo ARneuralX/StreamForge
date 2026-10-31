@@ -12,4 +12,5 @@ progress { width: 100%; height: 24px; accent-color: var(--accent); }
 .celebration.follow { animation: firework-burst .8s ease-out both; }
 .celebration.sub { animation: firework-burst 1s ease-out both; text-shadow: 0 0 18px #f2cb76; }
 .celebration.raid { animation: rain-fall 1.2s ease-in both; }
+.runner-lane{position:relative;display:flex;align-items:center;justify-content:space-between;overflow:hidden;height:72px;padding:10px;border:1px solid var(--accent2);border-radius:var(--radius);transition:background-color .2s}.runner-lane.night{box-shadow:inset 0 0 28px #0009}.runner-player{font-size:28px;transition:transform .2s}.runner-player.jump{transform:translateY(-22px)}.runner-obstacle{font-size:26px;transition:transform var(--runner-speed,1200ms) linear}.runner-ticker,.runner-hint{font-size:12px}.runner-leaderboard{display:flex;gap:14px;margin:5px 0;padding-left:20px;font-size:12px;color:var(--accent)}.runner-hint{max-height:36px;overflow:hidden}
 @keyframes rain-fall { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(10px); } }

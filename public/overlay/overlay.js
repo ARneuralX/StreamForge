@@ -32,7 +32,7 @@ async function load() {
     const frame = document.createElement("iframe");
     frame.className = "widget-frame"; frame.title = widget.title;
     frame.setAttribute("sandbox", "allow-scripts"); frame.src = `/widgets/frame.html?id=${encodeURIComponent(widget.id)}`;
-    frame.addEventListener("load",()=>{if(themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");});
+    frame.addEventListener("load",async()=>{if(themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");try{const saved=await(await fetch(`/api/widgets/${encodeURIComponent(widget.id)}/storage`)).json();frame.contentWindow?.postMessage({kind:"streamforge:storage:init",storage:saved.storage||{}},"*");}catch{/* widgets keep their safe defaults if storage is unavailable */}});
     region.append(frame); frames.set(widget.id, frame);
   }
   positionFrames();
@@ -73,6 +73,12 @@ socket.addEventListener("message", (event) => {
 });
 window.addEventListener("message", async (event) => {
   const message = event.data;
+  if(message?.kind==="streamforge:storage:set"){
+    const widgetId=[...frames.entries()].find(([,frame])=>frame.contentWindow===event.source)?.[0];
+    if(!widgetId||widgetId!==message.id)return;
+    await fetch(`/api/widgets/${encodeURIComponent(widgetId)}/storage`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({key:message.key,value:message.value})}).catch(()=>{});
+    return;
+  }
   if (!message || message.kind !== "streamforge:runtime-error") return;
   const frame = frames.get(message.id);
   if (!frame || event.source !== frame.contentWindow) return;
