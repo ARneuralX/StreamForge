@@ -3,7 +3,7 @@
 ## Master baseline
 
 - Done: Read the master run and master spec. The Step 0 script passed when run by the user; it was not rerun here.
-- Done: Added Express/TypeScript server, JSON persistence with atomic writes, dashboard page modules, mock event API and WebSocket bus, transparent overlay, sandboxed widget frames, Widget API documentation and five starter widgets.
+- Done: Added Express/TypeScript server, JSON persistence with atomic writes, dashboard page modules, mock event API and WebSocket bus, transparent overlay, sandboxed widget frames, Widget API documentation and five initial starter widgets. The scene later grew to include the curated Library set and Chat Runner.
 - Done: `npm install`, `npx tsc --noEmit`, isolated mock API checks, and headless Chrome checks for Overview and overlay.
 - Phase 2A stage 1 done: persistent queue/history/widget metadata, explicit build state transitions, request cooldown and blocklist, one-vote-per-user handling, redacted activity output, and mock-only approval pipeline with syntax/static-scan/mock-mount checks. Verified with isolated HTTP checks and a server restart.
 - Phase 2A stage 2 done: anchor-based layout packs all five starter widgets without collisions; manual coordinates persist, stay within the canvas bounds, and are used before automatic slots. Geometry check and 1920 × 1080 Chrome screenshot passed.
@@ -17,9 +17,8 @@
 - Phase 2B stage 2 done: curated the requested prediction, boss, goals, poll, celebration and countdown widgets in `library/catalog.json`. Library cards now mount real sandboxed previews, show original prompts/creator and Add to scene; Add/Remove/Add passed idempotence checks. The timer helpers now bind to the browser correctly. Static scanner/mock mount and simulated event checks passed for all six widgets.
 - Phase 2B stage 3 done: `.sfwidget` export/import carries source, metadata, creator and prompt; imports are statically scanned and mock-mounted before promotion, and same-code reimports are idempotent. Round-trip, duplicate, and unsafe-source rejection checks passed. Library page renders import/export controls and sandboxed previews.
 - Phase 2B quality gate: `npx tsc --noEmit`, `npm run test:widgets`, and isolated mock-server Library export/import checks passed; Chrome rendered the Library and Overview pages. Headless Chrome emitted platform display/GPU warnings; these are not page console diagnostics.
-- Next: Phase 3 stage 1.
-- Known issues: Twitch OAuth callback/token exchange and automatic Twitch connections are not implemented. Real Codex builds remain disabled for this run. Mock pipeline builds a fixed safe fixture and does not interpret requests into custom source.
-- Unverified: full browser-console audit across the five viewports has not been run. No real Twitch traffic or real Codex build was run.
+- Phase 2B complete: all three stages and quality gate are committed. The repository proceeded to Phase 3.
+- Unverified from earlier phases: Twitch OAuth callback/token exchange and automatic Twitch connections are not implemented. Real Codex builds remain disabled for this run. Mock pipeline builds a fixed safe fixture and does not interpret requests into custom source.
 
 ## Phase 3
 
@@ -35,4 +34,7 @@
 - Stage 5 done: added a dependency-free Chat Runner with `!jump`, anonymous hashed player labels, a leaderboard, per-player cooldown and minute caps, validated moderator palette/speed/obstacle/night commands, and a recent-change ticker. Persisted per-widget JSON storage travels through the host bridge; the runner settings and top 50 scores survive reload. Library and overlay hints include the commands. Mock event test covers jump score and moderator speed change; isolated API checks verified storage persistence, key validation and 8 KB limits. TypeScript and widget safety/mount checks pass.
 - Known limitation: the “leaderboard” uses anonymous per-session hashed player labels rather than Twitch display names. This preserves the user-identifier redaction policy.
 - Stage 6 done: added a feature-detected Web Speech microphone control, push-to-talk for pointer and keyboard, language selection (default en-US), interim status, editable final transcript, explicit Add to queue confirmation, and friendly denied/no-speech/network errors. Unsupported browsers hide the controls. README includes the browser speech-service privacy note. No audio or permission prompt was triggered during development.
-- Next: stage 7 final polish, docs and single end-to-end smoke.
+- Stage 7 done: refreshed feature/setup documentation, added history-based `docs/HOW_WE_USED_CODEX.md`, included kit preview cards and Library Add/Remove controls, added the in-overlay Chat Runner hint and isolated `npm run qa:phase3`, confirmed `.env` remains ignored, and searched product files for leftover Remix/test captions. Final `npm run qa:phase3` passed in an isolated mock server and headless Chrome: 12 templates, all five simulated event types, theme validation/fallback/kits, a scanned draft preview, all dashboard pages, Settings health, 10 sandboxed overlay widgets and zero browser console errors. `npx tsc --noEmit`, `npm run test:widgets` and `npm run test:templates` pass.
+- [ ] Real Twitch chat / IRC connection: not implemented; no real Twitch traffic was used.
+- Known issues: live OAuth token exchange, IRC/EventSub connections and real Codex builds remain unavailable. The mock runner is deterministic; build retry/timeout settings are saved for a future live runner. Voice recognition rendering was visible in Chrome, but audio capture and permission behavior were not exercised.
+- Phase 3 complete. Next: audit Phase 4 requirements.

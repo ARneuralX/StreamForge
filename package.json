@@ -12,7 +12,8 @@
     "start": "npm run build && node dist/server.js",
     "restart": "node scripts/restart.mjs",
     "test:widgets": "npm run build && node scripts/check-dice.mjs && node scripts/check-starter-pack.mjs",
-    "test:templates": "npm run build && node scripts/check-templates.mjs"
+    "test:templates": "npm run build && node scripts/check-templates.mjs",
+    "qa:phase3": "npm run build && node scripts/qa-phase3.mjs"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.166.0",

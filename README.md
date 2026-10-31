@@ -1,76 +1,57 @@
 # StreamForge
 
-StreamForge is a local dashboard and OBS browser overlay for community-built stream widgets. This repository is being built in ordered phases; the current baseline provides the dashboard shell, mock event path, starter widgets and an isolated overlay preview.
+StreamForge is a local dashboard and OBS browser overlay for community-driven stream widgets. Dashboard pages are separate modules, widgets run in isolated frames, and stream events can be simulated without contacting Twitch.
 
-## Run locally
+## Install and run
 
 1. Install Node.js 20 or newer.
-2. Copy `.env.example` to `.env` and set only the credentials you intend to use. Keep `.env` private.
-3. Run `npm install` and `npm start`.
-4. Open `http://localhost:3000/dashboard/`. Set `OPEN_BROWSER=false` to suppress auto-open. Set `PORT` to use a different port.
+2. Copy `.env.example` to `.env` and add only credentials you intend to use. Never commit `.env`.
+3. Run `npm install`, then `npm start`.
+4. StreamForge opens `http://localhost:3000/dashboard/` in Chrome when available. Set `OPEN_BROWSER=false` to suppress that. Set `PORT` to select another port; `npm run restart` restarts the local server.
 
-The initial default is mock mode. The dashboard's Simulate buttons generate local events; they do not contact Twitch. The OBS browser source URL is `http://localhost:3000/overlay/` (the transparent canvas is intended for OBS).
+The Twitch Developer Console redirect URL is `http://localhost:3000/auth/twitch/callback` (use the selected port if changed). The OBS browser source URL is `http://localhost:3000/overlay/`. The overlay defaults to a transparent background. Simulate controls are local and labelled; they do not contact Twitch.
 
-## Twitch callback
+## Dashboard features
 
-Register `http://localhost:3000/auth/twitch/callback` as the OAuth redirect URL in the Twitch Developer Console. If you change `PORT`, use `http://localhost:<PORT>/auth/twitch/callback` instead. Live Twitch behavior is gated by `TWITCH_LIVE_ENABLED=true`.
+- **Overview:** request form, setup checklist, simulated chat/follow/sub/raid/redeem events, theme presets, overlay kits, twelve prompt templates, and optional voice prompts.
+- **Build queue / Build Studio:** approve or reject queued requests; view human-readable stages, a sandboxed scanned-draft preview, preview backgrounds, event simulation, and safety results.
+- **Widgets:** toggle widgets, arrange their overlay positions, submit Remix requests and undo a prior Git version.
+- **Library:** browse sandboxed previews, inspect the original prompt and creator, add/remove widgets, and import/export `.sfwidget` files. Imports must pass the static scan and mock mount.
+- **Settings:** approval mode, vote/time thresholds, retry preference and timeout, Twitch redirect URL, and a non-secret service health panel.
 
-## Project structure
+The request queue supports `!build <idea>`, `!remix <widget> <change>`, `!vote N`, `vote N`, `+1`, and moderator `undo <slug>`. A moderator can also use `!theme <Halloween|Neon|Cozy|Retro|Clean>`. Voting is one per account per request. Auto-approval can use a vote threshold, elapsed time, or the simulated channel-point reward.
 
-```mermaid
-flowchart LR
-  Dashboard[Dashboard pages] --> API[Express API]
-  API --> Store[Ignored JSON state]
-  API --> Bus[WebSocket event bus]
-  Bus --> Overlay[OBS overlay host]
-  Overlay --> Frames[Sandboxed widget frames]
-  Frames --> Widgets[Widget API modules]
-```
+## Themes and kits
 
-## Widget API and security
+Five validated presets—Halloween, Neon, Cozy, Retro and Clean—update active overlay widgets without a rebuild. Theme suggestions choose a closest preset while Codex generation is unavailable. Three kits add existing Library widgets and apply a theme: Halloween, Cozy stream and Neon arcade. The Widget API documents validated theme tokens and compatibility.
 
-Widget modules export `default { meta, mount(api) }`; the current contract is documented in [docs/WIDGET_API.md](docs/WIDGET_API.md). The overlay uses `sandbox="allow-scripts"` without `allow-same-origin`, and widget static files receive a CSP with `connect-src 'none'`. Widget code must treat event fields as untrusted text. Tokens are never returned by the health or state endpoints.
+## Templates
 
-## Current verification and limits
-
-`npx tsc --noEmit` passed. Mock server checks covered queue behavior and restart persistence; Chrome screenshots confirmed the Overview and widget frames render. The Codex SDK gate was passed by the user. OAuth token exchange, IRC/EventSub connections, the real Codex build pipeline and remaining phase features are still being implemented and must not be considered ready yet.
-
-The Phase 2A mock queue now stores requests, history, votes and widget metadata in ignored JSON state. Approving a request runs a fixed mock fixture through syntax, static safety and mock-mount checks; it does not invoke Codex or convert the request into custom code. The overlay layout engine packs declared widget sizes into the 1920 × 1080 canvas and supports saved manual coordinates.
-
-To preview the current overlay, use `http://localhost:3000/overlay/?feed=1`. The feed shows Received, Approved, Planning, Writing code, Safety checks and Live/Rolled back with elapsed time and check results. Build requests and vote counts appear in the Up next panel. Widget positions can be saved in the Widgets page using canvas coordinates; the layout engine shifts other widgets around them.
-
-Chat voting supports `!vote 2`, `vote 2` and `+1` (one vote per account per request). The Settings page selects manual approval, auto-build after a vote threshold or elapsed time, or auto-build for the simulated `Build a widget` channel-point redemption. The server serializes mock builds so only one runs at a time.
-
-The Widgets page shows version counts and Undo / Rollback controls. Undo is enabled when Git has an earlier committed version for that widget; the restored source must pass the same scan and mock-mount check. Moderators can also submit `undo <slug>` through the chat ingestion endpoint.
-
-The dice widget displays an animated fireworks burst and a sparkle sound cue for a natural 20. Verify this locally with `npm run test:widgets`; the check controls the roll result and confirms the effect is present.
-
-Phase 2A verification: `npx tsc --noEmit` and `npm run test:widgets` passed. Isolated checks covered persistence across restart, request redaction, one-vote-per-user, vote/time/channel-point approval, feed stages and safety flags. Headless Chrome rendered all five dashboard pages and the 1920 × 1080 overlay.
-
-Remix requests use `!remix <widget name or id> <change>` in chat or the Remix form on the Widgets page. They join the ordinary queue and use its voting and approval rules. In this run, approval applies a fixed safe mock source update based on the existing widget; it does not invoke Codex or interpret the requested change into custom code. The prior Git version remains available for Undo.
-
-The Library contains six starter widgets: Prediction Scoreboard, Chat Boss Bar, Follow & Sub Goals, Live Chat Poll, Celebration Effects and Chat Countdown. Each card has a sandboxed running preview, its original prompt and creator. Add to scene and Remove are safe to repeat. Dashboard chat simulation sends poll, boss, countdown and dice commands; follow/sub/raid/redeem buttons exercise event-driven widgets.
-
-## Health and recovery
-
-Settings shows the current mock service health, queue depth and last safe error. Build settings include a retry preference (off by default) and a bounded build timeout. The current development runner is deterministic mock mode; it does not start real Codex builds or Twitch connections. Sandboxed widget runtime failures disable the affected widget and offer Undo when a previous Git version exists. A safe fallback panel appears if the dashboard section or overlay cannot load.
-
-## Build Studio
-
-Open **Build queue** to review each request and its human-readable build stages. Once the mock runner writes a draft and the static scan and mock mount pass, the Studio shows **Preview - not live yet** inside a network-blocked sandbox. Dark, bright and checker backgrounds are preview-only. The event buttons send simulated events through the local mock API; the same draft preview receives the selected event.
-
-## Themes and Overlay Kits
-
-Overview offers Halloween, Neon, Cozy, Retro and Clean themes. The moderator chat command `!theme Neon` applies the same validated theme tokens immediately to active overlay widgets. Three kits add existing Library widgets and apply their matching theme: Halloween, Cozy stream and Neon arcade. Theme suggestions use a closest-preset fallback while Codex generation is unavailable.
-
-## Template gallery
-
-Overview's **Start a build** gallery contains twelve categorized templates. **Edit prompt** loads the prompt into the editable request box, theme chips append a style hint, and **Build with Codex** queues that prompt through the existing approval flow. **Add instantly** activates a matching prebuilt Library widget without a build. **Surprise me** chooses a template prompt. In this development run the mock runner remains active; no real Codex build is invoked.
+Overview's **Start a build** gallery includes twelve categorized prompts. **Edit prompt** loads a prompt into the request box, theme chips append a visual hint, **Surprise me** selects a prompt, and **Build with Codex** queues the editable text through the approval flow. **Add instantly** enables the associated prebuilt Library widget where one exists.
 
 ## Chat Runner
 
-Add **Chat Runner** from the Library. Viewers use `!jump`; scores are kept in a small per-widget store and shown on an anonymous player leaderboard. Per-player cooldowns and a 20-action-per-minute limit apply. Moderators can use `!runner bg night|purple|forest|sunset`, `!runner speed slow|normal|fast`, `!runner obstacle add|remove spike|crate|rock`, and `!runner night on|off`. Invalid values are ignored. Larger redesigns can be requested with the existing Remix flow. The overlay includes a compact command hint.
+Add Chat Runner from the Library. Viewers use `!jump`; the widget keeps a small top-50 score list with anonymous per-session player labels. Per-player cooldown and rate limits apply. Moderators can use:
+
+- `!runner bg night|purple|forest|sunset`
+- `!runner speed slow|normal|fast`
+- `!runner obstacle add|remove spike|crate|rock`
+- `!runner night on|off`
+
+Only the listed values are accepted. Larger changes can be requested through Remix. The overlay and widget include a command hint.
 
 ## Voice prompts
 
-When the browser supports Web Speech recognition, hold the microphone button next to the Overview request box and speak. Choose a recognition language first. The live transcript is placed in the request box for editing when you release the button; it is never queued automatically. Use **Add to queue** to submit it. The browser may send audio to its speech service.
+When Web Speech recognition is supported, hold the microphone button beside the Overview request field and speak. Select a recognition language first. The transcript is placed in the request box for editing when you release the button; it is not queued until you press **Add to queue**. The browser may send audio to its speech service. Voice capture was not exercised during development.
+
+## Widget security and development mode
+
+Widgets export `default { meta, mount(api) }`; see [docs/WIDGET_API.md](docs/WIDGET_API.md). Frames use `sandbox="allow-scripts"` without `allow-same-origin`, and the widget CSP blocks network connections. The static scan blocks unsafe APIs, imports must pass a VM mock mount, widget changes use Git checkpoints, and rollback rechecks source. Widget event text is untrusted and rendered as text. Widget storage is mediated by the host, validated and size-limited.
+
+This development run uses the deterministic mock runner and simulated events. It does not run real Codex builds or real Twitch traffic. The mock runner uses a fixed safe fixture; it does not turn a request into custom source. OAuth token exchange, Twitch IRC and EventSub connections remain unimplemented. The Settings retry and timeout values are persisted for a future live runner; they do not produce a retry/timeout cycle in the deterministic mock path. Codex theme suggestions use preset fallback.
+
+## Checks and screenshots
+
+Run `npx tsc --noEmit`, `npm run test:widgets`, and `npm run test:templates`. To capture a dashboard or overlay image, start StreamForge, open the target page in Chrome, set the browser viewport to the desired size, then use Chrome DevTools **Capture screenshot** or macOS screenshot controls. Keep screenshots outside the repository unless they are intentional product assets.
+
+The Codex SDK Step 0 gate was run by the user. The verification task and real build button were not exercised during development.

@@ -22,6 +22,7 @@ const errorMessages: Record<ErrorCode, string> = {
 };
 let lastError: { code: ErrorCode; at: string } | undefined;
 function recordError(code: ErrorCode): string { lastError = { code, at: new Date().toISOString() }; return errorMessages[code]; }
+function classifyCodexFailure(error:unknown):ErrorCode|undefined{const text=String((error as Error)?.message||error||"").toLowerCase();if(/usage limit|rate.?limit|quota|\b429\b/u.test(text))return "CODEX_LIMIT_REACHED";if(/not logged in|unauthori[sz]ed|authentication|sign.?in|\b401\b/u.test(text))return "CODEX_NOT_LOGGED_IN";if(/timed? ?out|timeout/u.test(text))return "CODEX_TIMEOUT";return undefined;}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicRoot = path.join(root, "public");
@@ -126,6 +127,7 @@ async function widgetCommitHistory(widgetId: string): Promise<string[]> {
 }
 const recentBuilds = new Map<string, number>();
 const safeDrafts = new Map<string, string>();
+const anonymousSessionSalt=randomUUID();
 
 const app = express();
 app.disable("x-powered-by");
@@ -271,7 +273,7 @@ app.post("/api/codex/verify", async (_req, res) => {
     if (!contents.includes("StreamForge Codex verification")) throw Object.assign(new Error("verification_output_missing"), { code: "verification_output_missing" });
     store.codexVerification = { time: new Date().toISOString(), ok: true };
   } catch (error) {
-    const code = String((error as NodeJS.ErrnoException).code || "codex_verification_failed").slice(0, 100);
+    const code = classifyCodexFailure(error)||String((error as NodeJS.ErrnoException).code || "CODEX_BAD_OUTPUT").slice(0, 100);
     store.codexVerification = { time: new Date().toISOString(), ok: false, error: code };
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });
@@ -412,7 +414,7 @@ app.post("/api/chat", async (req, res) => {
   const userId = typeof req.body?.userId === "string" ? req.body.userId.slice(0, 100) : "";
   const login = typeof req.body?.login === "string" ? req.body.login.slice(0, 40) : "";
   if (!message || !userId || req.body?.isBot === true || /(?:bot|nightbot|streamelements|moobot)$/iu.test(login)) return res.json({ ok: true, ignored: true });
-  const anonymousPlayer=`Player ${createHash("sha256").update(userId).digest("hex").slice(0,5)}`;
+  const anonymousPlayer=`Player ${createHash("sha256").update(`${anonymousSessionSalt}:${userId}`).digest("hex").slice(0,5)}`;
   publish({ type: "event", event: { type: "chat", payload: { message: redactDisplay(message), user: anonymousPlayer, isMod:req.body?.isMod===true }, simulated: req.body?.simulated === true, at: new Date().toISOString() } });
   const buildMatch = /^!build\s+(.+)$/iu.exec(message);
   if (buildMatch) {
