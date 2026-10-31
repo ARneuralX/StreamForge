@@ -70,3 +70,7 @@ Overview's **Start a build** gallery contains twelve categorized templates. **Ed
 ## Chat Runner
 
 Add **Chat Runner** from the Library. Viewers use `!jump`; scores are kept in a small per-widget store and shown on an anonymous player leaderboard. Per-player cooldowns and a 20-action-per-minute limit apply. Moderators can use `!runner bg night|purple|forest|sunset`, `!runner speed slow|normal|fast`, `!runner obstacle add|remove spike|crate|rock`, and `!runner night on|off`. Invalid values are ignored. Larger redesigns can be requested with the existing Remix flow. The overlay includes a compact command hint.
+
+## Voice prompts
+
+When the browser supports Web Speech recognition, hold the microphone button next to the Overview request box and speak. Choose a recognition language first. The live transcript is placed in the request box for editing when you release the button; it is never queued automatically. Use **Add to queue** to submit it. The browser may send audio to its speech service.
