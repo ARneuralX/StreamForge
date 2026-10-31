@@ -9,6 +9,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { writeFile as writeWidgetFile } from "node:fs/promises";
 import { WebSocketServer, WebSocket } from "ws";
 import { checkWidgetSource } from "./security/widget-checks.js";
+import { validateRequestText } from "./security/request-checks.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string };
@@ -62,6 +63,8 @@ const starterWidgets: WidgetMeta[] = [
   { id: "welcome-banner", title: "Welcome Banner", description: "A friendly message for new followers.", width: 460, height: 110, x: 0, y: 0, anchor: "bottom-right", enabled: true },
 ];
 const librarySeed = JSON.parse(await readFile(path.join(root, "library/catalog.json"), "utf8")) as LibraryEntry[];
+type BuildTemplate = { id:string;category:string;title:string;description:string;prompt:string;time:string;widgetId?:string };
+const buildTemplates = JSON.parse(await readFile(path.join(root,"templates.json"),"utf8")) as BuildTemplate[];
 const themePresets = {
   Halloween: { accent:"#ffb36b",accent2:"#a98aff",background:"#17101f",text:"#fff3e4",glow:"#ff7e46",radius:18,fontStack:"system-ui",animationSpeed:1 },
   Neon: { accent:"#8afff0",accent2:"#ff65d8",background:"#101522",text:"#f1ffff",glow:"#46f5dc",radius:12,fontStack:"Arial",animationSpeed:1.25 },
@@ -120,7 +123,6 @@ async function widgetCommitHistory(widgetId: string): Promise<string[]> {
 }
 const recentBuilds = new Map<string, number>();
 const safeDrafts = new Map<string, string>();
-const blocklist = [/\bmalware\b/iu, /\bsteal\s+(?:a\s+)?token\b/iu, /\bkeylogger\b/iu];
 
 const app = express();
 app.disable("x-powered-by");
@@ -156,6 +158,7 @@ app.get("/api/requests/:id/preview", (req, res) => {
   res.send(`<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:12px;background:${background};color:#f6f2ff;font:14px system-ui}#widget{min-height:120px}</style><main id="widget"></main><script>const listeners=new Map();const api={root:document.querySelector('#widget'),on(n,f){listeners.set(n,[...(listeners.get(n)||[]),f])},sound:{play(){}},timers:{setTimeout,clearTimeout,setInterval,clearInterval},storage:{get(){return null},set(){}}};window.addEventListener('message',e=>{if(e.data?.kind==='streamforge:event')for(const fn of listeners.get(e.data.event?.type)||[])try{fn(e.data.event.payload||{})}catch(err){parent.postMessage({kind:'streamforge:draft-error',detail:String(err?.message||'Widget error').slice(0,160)},'*')}});try{const widget=(()=>{${safeSource}})();widget.mount(api)}catch(err){document.querySelector('#widget').textContent='Preview blocked: '+String(err?.message||'widget error').slice(0,120)}</script>`);
 });
 app.get("/api/library", (_req, res) => res.json(store.library));
+app.get("/api/templates", (_req,res)=>res.json(buildTemplates));
 function validTheme(value: unknown): value is ThemeTokens {
   if (!value || typeof value !== "object") return false;
   const theme=value as Record<string,unknown>;const keys=["accent","accent2","background","text","glow","radius","fontStack","animationSpeed"];
@@ -384,9 +387,8 @@ setInterval(() => {
 }, 1000);
 app.post("/api/requests", async (req, res) => {
   const text = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 300) : "";
-  if (!text) return res.status(400).json({ error: "Enter a widget request first." });
+  const validation=validateRequestText(text);if(!validation.ok)return res.status(400).json({error:validation.reason});
   if (store.requests.filter((item) => item.status === "queued").length >= 100) return res.status(429).json({ error: recordError("QUEUE_FULL") });
-  if (blocklist.some((rule) => rule.test(text))) return res.status(400).json({ error: "That request needs a manual moderator review." });
   const request = await createRequest(text, "Dashboard", "dashboard");
   res.status(201).json(publicRequest(request));
 });
@@ -401,7 +403,7 @@ app.post("/api/chat", async (req, res) => {
     const lastBuildAt = recentBuilds.get(userId) || 0;
     if (Date.now() - lastBuildAt < 30_000) return res.status(429).json({ ok: false, reason: "Please wait before submitting another request." });
     const text = buildMatch[1].trim().slice(0, 300);
-    if (text && !blocklist.some((rule) => rule.test(text))) {
+    if (validateRequestText(text).ok) {
       recentBuilds.set(userId, Date.now());
       await createRequest(text, "Chat viewer", "chat");
     }
@@ -414,7 +416,7 @@ app.post("/api/chat", async (req, res) => {
     const widget = [...store.widgets].sort((a,b)=>b.title.length-a.title.length).find((item)=>body.toLocaleLowerCase().startsWith(`${item.title.toLocaleLowerCase()} `) || body.toLocaleLowerCase().startsWith(`${item.id.toLocaleLowerCase()} `));
     if (!widget) return res.status(400).json({ ok: false, reason: "Name a widget from the current scene, followed by the requested change." });
     const change = body.slice(body.toLocaleLowerCase().startsWith(`${widget.id.toLocaleLowerCase()} `) ? widget.id.length : widget.title.length).trim().slice(0,300);
-    if (!change || blocklist.some((rule)=>rule.test(change))) return res.status(400).json({ok:false,reason:"Enter a safe change of up to 300 characters."});
+    if (!validateRequestText(change).ok) return res.status(400).json({ok:false,reason:"Enter a safe change of up to 300 characters and avoid blocked content."});
     recentBuilds.set(userId, Date.now());
     await createRequest(change, "Chat viewer", "chat", "remix", widget.id);
   }
@@ -463,7 +465,7 @@ app.post("/api/widgets/:id/remix", async (req, res) => {
   const change = typeof req.body?.change === "string" ? req.body.change.trim().slice(0,300) : "";
   if (!widget) return res.status(404).json({error:"Widget not found."});
   if (!change) return res.status(400).json({error:"Describe the change to request."});
-  if (blocklist.some((rule)=>rule.test(change))) return res.status(400).json({error:"That change needs manual moderator review."});
+  if (!validateRequestText(change).ok) return res.status(400).json({error:"That change needs manual moderator review."});
   const request=await createRequest(change,"Dashboard","dashboard","remix",widget.id);
   res.status(201).json(publicRequest(request));
 });

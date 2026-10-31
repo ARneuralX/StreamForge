@@ -30,4 +30,6 @@
 - Known limitation: Codex mode remains disabled for this run, so the Studio has no real SDK stream or real Codex-generated draft. The deterministic mock runner exercises the safe preview lifecycle.
 - Stage 3 done: added validated theme tokens and five presets, live dashboard/moderator `!theme` changes, safe system font and bounded color/numeric validation, closest-preset fallback for theme suggestions when Codex is unavailable, and idempotent Halloween, Cozy and Neon kits. Shared widget CSS uses live tokens; API and mock checker expose `api.theme`. Isolated API checks passed for valid/invalid themes, moderator changes, and applying the same kit twice. `npm run test:widgets`, TypeScript and JavaScript checks pass.
 - Known limitation: theme suggestions do not call Codex in this development run; they select and report a closest preset.
-- Next: stage 4 template gallery.
+- Stage 4 done: added twelve categorized entries in `templates.json`, an Overview gallery with editable prompts, five style chips, Surprise me, queued Build with Codex requests, and instant Library activation where a prebuilt widget exists. Shared request validation now serves the API and template tests. `npm run test:templates` confirms all twelve prompts pass the validator and all instant-add references exist; widget checks and TypeScript pass.
+- Known limitation: template build requests use the existing development mock runner; no real Codex build is started.
+- Next: stage 5 Chat Runner game.

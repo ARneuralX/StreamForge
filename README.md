@@ -62,3 +62,7 @@ Open **Build queue** to review each request and its human-readable build stages.
 ## Themes and Overlay Kits
 
 Overview offers Halloween, Neon, Cozy, Retro and Clean themes. The moderator chat command `!theme Neon` applies the same validated theme tokens immediately to active overlay widgets. Three kits add existing Library widgets and apply their matching theme: Halloween, Cozy stream and Neon arcade. Theme suggestions use a closest-preset fallback while Codex generation is unavailable.
+
+## Template gallery
+
+Overview's **Start a build** gallery contains twelve categorized templates. **Edit prompt** loads the prompt into the editable request box, theme chips append a style hint, and **Build with Codex** queues that prompt through the existing approval flow. **Add instantly** activates a matching prebuilt Library widget without a build. **Surprise me** chooses a template prompt. In this development run the mock runner remains active; no real Codex build is invoked.
