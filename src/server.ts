@@ -50,12 +50,13 @@ const starterWidgets: WidgetMeta[] = [
   { id: "screen-effects", title: "Celebration Effects", description: "Celebrate follows, subs and raids.", width: 420, height: 260, x: 0, y: 0, anchor: "center", enabled: true },
   { id: "welcome-banner", title: "Welcome Banner", description: "A friendly message for new followers.", width: 460, height: 110, x: 0, y: 0, anchor: "bottom-right", enabled: true },
 ];
-const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock" } };
+const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0 } };
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
 catch { store = defaultStore; }
 if (!Array.isArray(store.widgets) || store.widgets.length === 0) store.widgets = starterWidgets;
 if (!Array.isArray(store.requestHistory)) store.requestHistory = [...store.requests];
+store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
 
 async function persist(): Promise<void> {
   const tempPath = `${storePath}.${randomUUID()}.tmp`;
@@ -131,6 +132,13 @@ function setState(request: Request, next: BuildState): void {
 function buildFeed(request: Request, stage: string, detail: string, checks?: unknown): void {
   publish({ type: "buildFeed", request: publicRequest(request), stage, detail, checks, at: new Date().toISOString() });
 }
+async function createRequest(text: string, requester: string, source: string): Promise<Request> {
+  const request: Request = { id: randomUUID(), text, requester, source, status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [] };
+  store.requests.unshift(request); store.requestHistory.unshift({ ...request });
+  await persist(); publish({ type: "request", request: publicRequest(request) });
+  buildFeed(request, "Received", "Request added to the queue");
+  return request;
+}
 async function mockBuild(request: Request): Promise<void> {
   const buildMode = String(store.settings.buildMode || "mock");
   if (buildMode === "codex") {
@@ -163,16 +171,26 @@ async function mockBuild(request: Request): Promise<void> {
     buildFeed(request, "Rolled back", request.failure); await persist();
   }
 }
+let buildChain: Promise<void> = Promise.resolve();
+function runBuild(request: Request): Promise<void> {
+  buildChain = buildChain.then(() => mockBuild(request));
+  return buildChain;
+}
+setInterval(() => {
+  if (store.settings.approval !== "auto-votes") return;
+  const seconds = Number(store.settings.autoBuildSeconds || 0);
+  if (seconds <= 0) return;
+  const next = store.requests.filter((item) => item.status === "queued").sort((a,b)=>(b.votes||0)-(a.votes||0)||a.createdAt.localeCompare(b.createdAt))[0];
+  if (!next || Date.now() - Date.parse(next.createdAt) < seconds * 1000) return;
+  setState(next, "approved");
+  publish({type:"queue",requests:store.requests.filter((item)=>item.status==="queued").map(publicRequest)});
+  void persist().then(() => runBuild(next));
+}, 1000);
 app.post("/api/requests", async (req, res) => {
   const text = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 300) : "";
   if (!text) return res.status(400).json({ error: "Enter a widget request first." });
   if (blocklist.some((rule) => rule.test(text))) return res.status(400).json({ error: "That request needs a manual moderator review." });
-  const request: Request = { id: randomUUID(), text, requester: "Dashboard", source: "dashboard", status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [] };
-  store.requests.unshift(request);
-  store.requestHistory.unshift({ ...request });
-  await persist();
-  publish({ type: "request", request: publicRequest(request) });
-  buildFeed(request, "Received", "Request added to the queue");
+  const request = await createRequest(text, "Dashboard", "dashboard");
   res.status(201).json(publicRequest(request));
 });
 app.post("/api/chat", async (req, res) => {
@@ -188,9 +206,7 @@ app.post("/api/chat", async (req, res) => {
     const text = buildMatch[1].trim().slice(0, 300);
     if (text && !blocklist.some((rule) => rule.test(text))) {
       recentBuilds.set(userId, Date.now());
-      const request: Request = { id: randomUUID(), text, requester: "Chat viewer", source: "chat", status: "queued", createdAt: new Date().toISOString(), votes: 0, voterIds: [] };
-      store.requests.unshift(request); store.requestHistory.unshift({ ...request }); await persist();
-      publish({ type: "request", request: publicRequest(request) }); buildFeed(request, "Received", "Request added to the queue");
+      await createRequest(text, "Chat viewer", "chat");
     }
   }
   const voteMatch = /^(?:!vote\s+(\d+)|vote\s+(\d+)|\+1)$/iu.exec(message);
@@ -203,7 +219,7 @@ app.post("/api/chat", async (req, res) => {
       const history = store.requestHistory.find((item) => item.id === request.id); if (history) Object.assign(history, request);
       await persist(); publish({ type: "queue", requests: queued.map(publicRequest) });
       const threshold = Number(store.settings.autoBuildVotes || 0);
-      if (threshold > 0 && request.votes >= threshold && store.settings.approval === "auto-votes") { setState(request, "approved"); await persist(); await mockBuild(request); }
+      if (threshold > 0 && request.votes >= threshold && store.settings.approval === "auto-votes") { setState(request, "approved"); await persist(); publish({type:"queue",requests:queued.map(publicRequest)}); await runBuild(request); }
     }
   }
   res.json({ ok: true });
@@ -218,14 +234,30 @@ app.post("/api/requests/:id/:action", async (req, res) => {
   else return res.status(400).json({ error: "Unknown request action." });
   await persist();
   publish({ type: "request", request: publicRequest(request) });
-  if (approved) await mockBuild(request);
+  if (approved) await runBuild(request);
   res.json(publicRequest(request));
+});
+app.patch("/api/settings", async (req, res) => {
+  const approval = req.body?.approval;
+  if (approval !== undefined && !["manual", "auto-votes", "auto-points"].includes(approval)) return res.status(400).json({ error: "Choose manual, vote threshold, or channel points." });
+  const votes = req.body?.autoBuildVotes === undefined ? undefined : Number(req.body.autoBuildVotes);
+  const seconds = req.body?.autoBuildSeconds === undefined ? undefined : Number(req.body.autoBuildSeconds);
+  if (votes !== undefined && (!Number.isInteger(votes) || votes < 1 || votes > 1000)) return res.status(400).json({ error: "Vote threshold must be from 1 to 1000." });
+  if (seconds !== undefined && (!Number.isInteger(seconds) || seconds < 0 || seconds > 86400)) return res.status(400).json({ error: "Build timer must be from 0 to 86400 seconds." });
+  if (approval !== undefined) store.settings.approval = approval;
+  if (votes !== undefined) store.settings.autoBuildVotes = votes;
+  if (seconds !== undefined) store.settings.autoBuildSeconds = seconds;
+  await persist(); res.json(store.settings);
 });
 app.post("/api/simulate/:event", (req, res) => {
   const allowed = new Set(["chat", "follow", "sub", "raid", "redeem"]);
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
   const event = { type: req.params.event, payload: req.body ?? {}, simulated: true, at: new Date().toISOString() };
   publish({ type: "event", event });
+  if (event.type === "redeem" && store.settings.approval === "auto-points" && req.body?.reward === "Build a widget") {
+    const text = typeof req.body?.user_input === "string" ? req.body.user_input.trim().slice(0, 300) : "Make a channel point widget";
+    void createRequest(text || "Make a channel point widget", "Channel point redeemer", "points").then(async (request) => { setState(request, "approved"); await persist(); await runBuild(request); });
+  }
   res.json({ ok: true, simulated: true });
 });
 app.patch("/api/widgets/:id", async (req, res) => {
