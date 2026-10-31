@@ -83,3 +83,10 @@
 - Recovered the Overview parse error in the committed rewrite by moving its contrast text formatting into a small helper. Reproduction was `node --check public/dashboard/pages/overview.js`, which failed on the malformed nested template literal.
 - The first `qa:ui` run rendered the page but reported horizontal overflow on Overview at all four viewports. Root cause: the recap canvas retained its 1920px intrinsic width with no responsive CSS. Added a 100%-width, auto-height rule. Follow-up `node --check` and `OPEN_BROWSER=false npm run qa:ui` passed: 8 pages × 4 viewports, overlay 1920×1080, zero diagnostics, failed requests, layout or accessibility findings.
 - Next: Part 2 R1 env and configuration, then R2–R10 integrations with fake-only tests.
+
+### Real integration step 1: environment config
+
+- Done: moved dotenv parsing into `src/config/env.ts`; spaces around `=` and single/double-quoted values are handled without reading or exposing secrets. The live integration switch is exactly `TWITCH_LIVE_ENABLED=true`; it does not require production NODE_ENV.
+- Updated Settings hints for the live switch and Codex runner mode. Added `npm run test:env` for these configuration rules.
+- Verified: `npm run test:env`, Settings JS syntax check, and `npx tsc --noEmit` pass.
+- Next: R2 OAuth, after validating all OAuth scopes and APIs against official Twitch docs.

@@ -14,6 +14,7 @@ import { createWidgetPassport, type WidgetPassport } from "./security/passport.j
 import { contrastRatio, nearestAccessibleText } from "./security/contrast.js";
 import { HypeEngine, type HypeSettings } from "./hype/engine.js";
 import { SessionManager, type SessionActivity } from "./sessions/manager.js";
+import { loadEnvFile, liveTwitchEnabled } from "./config/env.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
@@ -34,25 +35,9 @@ const dataDir = path.resolve(process.env.STREAMFORGE_DATA_DIR || path.join(root,
 const widgetRoot = path.resolve(process.env.STREAMFORGE_WIDGETS_DIR || path.join(root, "widgets"));
 const scenesPath=path.join(dataDir,"scenes.json");
 
-function parseEnv(source: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const raw of source.split(/\r?\n/u)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const index = line.indexOf("=");
-    if (index < 1) continue;
-    const key = line.slice(0, index).trim();
-    let value = line.slice(index + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
-    values[key] = value;
-  }
-  return values;
+for (const [key, value] of Object.entries(await loadEnvFile(path.join(root, ".env")))) {
+  if (process.env[key] === undefined) process.env[key] = value;
 }
-
-try {
-  const contents = await readFile(path.join(root, ".env"), "utf8");
-  for (const [key, value] of Object.entries(parseEnv(contents))) if (process.env[key] === undefined) process.env[key] = value;
-} catch { /* .env is optional; never echo its contents. */ }
 
 const port = Number(process.env.PORT || 3000);
 
@@ -198,7 +183,7 @@ app.use("/widgets", express.static(widgetRoot, {
   },
 }));
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: process.env.TWITCH_LIVE_ENABLED === "true", chat: "needs_setup", eventSub: "needs_setup", tokenExpiry: "not_connected" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: liveTwitchEnabled(process.env), chat: "needs_setup", eventSub: "needs_setup", tokenExpiry: "not_connected" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
   const tokens=store.settings.themeTokens as ThemeTokens;const themeContrast=validTheme(tokens)?{ratio:Number(contrastRatio(tokens.text,tokens.background).toFixed(2)),passes:contrastRatio(tokens.text,tokens.background)>=4.5}:null;
