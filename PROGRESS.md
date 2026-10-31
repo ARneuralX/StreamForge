@@ -175,3 +175,11 @@
 - Replaced the old single-corner sampling audit with full-frame per-widget pixel comparisons and exact token acknowledgement checks. `npm run test:theme-frames` covers all nine sandboxed widget frames, five presets, all eight CSS tokens, recap overlay live redraw and an exact Chat Runner palette allowlist. The old “unchanged widget” findings were sampling false positives, not widget source failures, so no widget color rules were loosened or unnecessary source edits made.
 - Verified the fake/local theme proof, `npx tsc --noEmit`, all viewport QA and `git diff --check`; no live Twitch/Codex behavior was used.
 - Next: Phase 4B stage 4 shared preview backgrounds across overlay, Build Studio and Library.
+
+### Phase 4B stage 4: shared preview backgrounds
+
+- Done: added the shared five-option palette, exact colors and independent Build Studio/Library persistence. Overlay selection remains an explicit URL option; the default OBS source stays transparent. The same host helper paints dashboard preview frames and sends validated background-only messages to their opaque sandboxed widget runtimes, which replace the opaque preview gradient with a translucent theme fill.
+- Root cause: the three surfaces had separate or missing background controls, while the widget card's opaque gradient hid selected backgrounds. A first checker pixel run also exposed invalid CSS: tile sizing had been included in `background-image`. The helper now keeps gradient and 24 × 24 px size as separate CSS properties. Widget frames retain their opaque-origin sandbox; background styling is passed from the host instead of importing a dashboard module inside that sandbox.
+- Added `npm run test:preview-backgrounds`, which samples rendered pixels for all five choices on overlay, Build Studio and Library and checks the transparent state, independent saved choices, and a default transparent OBS canvas.
+- Verified the isolated mock-mode pixel suite, `npx tsc --noEmit`, `OPEN_BROWSER=false npm run qa:ui`, and `git diff --check`. No real Twitch/Codex behavior was used.
+- Next: Phase 4B stage 5 Library reliability and sandboxed preview checks.

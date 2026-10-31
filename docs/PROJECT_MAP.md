@@ -39,10 +39,12 @@ flowchart LR
 | `src/sessions/manager.ts` | Persisted session lifecycle, aggregates, activity and recap data. |
 | `public/dashboard/index.html`, `app.css`, `app.js` | Dashboard shell, layout/styles, navigation, state refresh, health strip, and live WebSocket updates. |
 | `public/dashboard/pages/*.js` | Separate page renderers for Overview, queue/Build Studio, Widgets, Library, Settings, Sessions, Scenes, and Demo Director. |
+| `public/dashboard/preview-backgrounds.js` | Shared exact-color preview backgrounds and per-surface preference helpers. |
 | `public/dashboard/recap.js` | Dependency-free recap canvas rendering and image actions. |
 | `public/dashboard/demo-sequence.json` | Scripted simulated Demo Director sequence. |
 | `public/overlay/index.html`, `overlay.css`, `overlay.js`, `layout.js` | Transparent OBS canvas, widget frame creation/placement, previews, events, theme/motion, feed and replay display. |
 | `widgets/frame.html`, `runtime.js` | Sandboxed iframe document and API bridge; imports a widget module after validating host messages. |
+| `docs/PREVIEW_BACKGROUNDS.md` | Exact preview colors, persistence scopes and transparent OBS default. |
 | `widgets/widget.css` | Shared CSS tokens and base widget styles. |
 | `widgets/*/index.js` | Nine built-in widget modules: dice roller, prediction scoreboard, boss bar, goal bar, poll, countdown, screen effects, welcome banner, and Chat Runner. |
 | `library/catalog.json` | Curated Library records, prompts and creator metadata. |

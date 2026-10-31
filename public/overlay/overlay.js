@@ -1,12 +1,12 @@
 import { computeLayout } from "/overlay/layout.js";
 import { drawRecap } from "/dashboard/recap.js";
+import { applyPreviewBackground, previewBackgrounds, setPreviewFrameBackground, withPreviewBackground } from "/dashboard/preview-backgrounds.js";
 
 const params = new URLSearchParams(location.search);
 const bg = params.get("bg");
+const previewBackground = Object.hasOwn(previewBackgrounds, bg) ? bg : undefined;
+if (previewBackground) applyPreviewBackground(document.body, previewBackground);
 let safeModeLevel=["off","reduced","minimal"].includes(params.get("safeMode"))?params.get("safeMode"):"off";
-const backgrounds = { dark: "#17151f", bright: "#f5f5f5", green: "#00ff00", transparent: "transparent" };
-if (bg === "checker") document.body.style.backgroundImage = "conic-gradient(#777 25%, #fff 0 50%, #777 0 75%, #fff 0) 0 / 24px 24px";
-else if (backgrounds[bg]) document.body.style.background = backgrounds[bg];
 if (params.has("feed")) document.querySelector("#feed").hidden = false;
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 let frames = new Map();
@@ -41,7 +41,7 @@ async function load() {
   for (const widget of layoutItems) {
     const frame = document.createElement("iframe");
     frame.className = "widget-frame"; frame.title = widget.title;
-    frame.setAttribute("sandbox", "allow-scripts"); frame.src = `/widgets/frame.html?id=${encodeURIComponent(widget.id)}`;
+    frame.setAttribute("sandbox", "allow-scripts"); const frameUrl=`/widgets/frame.html?id=${encodeURIComponent(widget.id)}`;frame.src=previewBackground?withPreviewBackground(frameUrl,previewBackground):frameUrl;if(previewBackground)setPreviewFrameBackground(frame,previewBackground);
     frame.addEventListener("load",async()=>{if(themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");frame.contentWindow?.postMessage({kind:"streamforge:safe-mode",level:safeModeLevel},"*");if(data.hype)frame.contentWindow?.postMessage({kind:"streamforge:hype",hype:data.hype},"*");try{const saved=await(await fetch(`/api/widgets/${encodeURIComponent(widget.id)}/storage`)).json();frame.contentWindow?.postMessage({kind:"streamforge:storage:init",storage:saved.storage||{}},"*");}catch{/* widgets keep their safe defaults if storage is unavailable */}});
     region.append(frame); frames.set(widget.id, frame);
   }
