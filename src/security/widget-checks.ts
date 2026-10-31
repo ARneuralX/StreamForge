@@ -33,6 +33,7 @@ export async function checkWidgetSource(source: string): Promise<WidgetCheckResu
     const listeners = new Map<string, Function[]>();
     const api = {
       root: makeElement(),
+      theme: { accent: "#a9f5dc", accent2: "#aa8aff", background: "#17151f", text: "#f6f2ff", glow: "#a9f5dc", radius: 16, fontStack: "system-ui", animationSpeed: 1 },
       on(name: string, handler: Function) { listeners.set(name, [...(listeners.get(name) || []), handler]); },
       sound: { play() {} }, timers: { setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {} }, storage: { get() { return null; }, set() {} },
     };

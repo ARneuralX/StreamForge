@@ -9,6 +9,7 @@ if (params.has("feed")) document.querySelector("#feed").hidden = false;
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 let frames = new Map();
 let layoutItems = [];
+let themeTokens;
 const toast = document.createElement("section");
 toast.className = "feed"; toast.hidden = true; toast.setAttribute("role", "alert"); document.querySelector("#canvas").append(toast);
 function positionFrames() {
@@ -22,6 +23,7 @@ function positionFrames() {
 async function load() {
  try {
   const data = await (await fetch("/api/state")).json();
+  themeTokens=data.settings.themeTokens;
   const mode=data.settings.buildMode;
   document.querySelector("#badge").textContent=mode==="replay"?"DEMO MODE · recorded build":mode==="codex"?"LIVE BUILD MODE":"MOCK MODE · simulated events";
   const region = document.querySelector("#widgets"); region.replaceChildren(); frames = new Map();
@@ -30,6 +32,7 @@ async function load() {
     const frame = document.createElement("iframe");
     frame.className = "widget-frame"; frame.title = widget.title;
     frame.setAttribute("sandbox", "allow-scripts"); frame.src = `/widgets/frame.html?id=${encodeURIComponent(widget.id)}`;
+    frame.addEventListener("load",()=>{if(themeTokens)frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");});
     region.append(frame); frames.set(widget.id, frame);
   }
   positionFrames();
@@ -49,6 +52,7 @@ socket.addEventListener("message", (event) => {
   if (message.type === "event") {
     for (const frame of frames.values()) frame.contentWindow?.postMessage({kind:"streamforge:event",event:message.event},"*");
   }
+  if(message.type==="theme"){themeTokens=message.tokens;for(const frame of frames.values())frame.contentWindow?.postMessage({kind:"streamforge:theme",tokens:themeTokens},"*");}
   if (message.type === "widgets") load();
   if (message.type === "event" && document.querySelector("#feed").hidden === false) {
     const item=document.createElement("div");item.className="feed-item";item.textContent=`${message.event.simulated?"SIMULATED · ":""}${message.event.type} event received`;document.querySelector("#feed-items").prepend(item);

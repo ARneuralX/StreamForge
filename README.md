@@ -58,3 +58,7 @@ Settings shows the current mock service health, queue depth and last safe error.
 ## Build Studio
 
 Open **Build queue** to review each request and its human-readable build stages. Once the mock runner writes a draft and the static scan and mock mount pass, the Studio shows **Preview - not live yet** inside a network-blocked sandbox. Dark, bright and checker backgrounds are preview-only. The event buttons send simulated events through the local mock API; the same draft preview receives the selected event.
+
+## Themes and Overlay Kits
+
+Overview offers Halloween, Neon, Cozy, Retro and Clean themes. The moderator chat command `!theme Neon` applies the same validated theme tokens immediately to active overlay widgets. Three kits add existing Library widgets and apply their matching theme: Halloween, Cozy stream and Neon arcade. Theme suggestions use a closest-preset fallback while Codex generation is unavailable.

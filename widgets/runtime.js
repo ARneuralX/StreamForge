@@ -2,15 +2,20 @@ const params = new URLSearchParams(location.search);
 const widgetId = params.get("id");
 const previewBackgrounds = { dark: "#17151f", bright: "#f5f5f5", checker: "conic-gradient(#777 25%, #fff 0 50%, #777 0 75%, #fff 0) 0 / 24px 24px" };
 if (params.get("preview") === "1") document.body.style.background = previewBackgrounds[params.get("bg")] || previewBackgrounds.dark;
+const themeDefaults={accent:"#a9f5dc",accent2:"#aa8aff",background:"#17151f",text:"#f6f2ff",glow:"#a9f5dc",radius:16,fontStack:"system-ui",animationSpeed:1};
+const apiTheme={...themeDefaults};
+function applyTheme(tokens){if(!tokens||typeof tokens!=="object")return;const allowedFonts=["system-ui","Arial","Georgia","Trebuchet MS"];for(const key of ["accent","accent2","background","text","glow"])if(typeof tokens[key]!=="string"||!/^#[0-9a-f]{6}$/iu.test(tokens[key]))return;if(!allowedFonts.includes(tokens.fontStack)||!Number.isFinite(tokens.radius)||tokens.radius<0||tokens.radius>40||!Number.isFinite(tokens.animationSpeed)||tokens.animationSpeed<.5||tokens.animationSpeed>2)return;Object.assign(apiTheme,tokens);const styles={accent:tokens.accent,accent2:tokens.accent2,background:tokens.background,text:tokens.text,glow:tokens.glow,radius:`${tokens.radius}px`,fontStack:tokens.fontStack,animationSpeed:String(tokens.animationSpeed)};for(const [key,value] of Object.entries(styles))document.documentElement.style.setProperty(`--${key}`,value);}
 const listeners = new Map();
 const root = document.querySelector("#widget");
 const api = {
   root,
+  theme: apiTheme,
   on(name, handler) { if (!listeners.has(name)) listeners.set(name, []); listeners.get(name).push(handler); },
   sound: { play(cue = "sparkle") { try { const AudioContextType=window.AudioContext||window.webkitAudioContext; if(!AudioContextType)return; const context=new AudioContextType(); const oscillator=context.createOscillator(); const gain=context.createGain(); oscillator.type="sine"; oscillator.frequency.value=cue==="fanfare"?660:880; gain.gain.setValueAtTime(.0001,context.currentTime);gain.gain.exponentialRampToValueAtTime(.08,context.currentTime+.025);gain.gain.exponentialRampToValueAtTime(.0001,context.currentTime+.28);oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+.3); } catch { /* browser may block synthesized audio until the viewer interacts */ } } },
   timers: { setTimeout: (...args) => window.setTimeout(...args), clearTimeout: (id) => window.clearTimeout(id), setInterval: (...args) => window.setInterval(...args), clearInterval: (id) => window.clearInterval(id) },
   storage: { get() { return null; }, set() {} },
 };
+window.addEventListener("message",(event)=>{if(event.source===parent&&event.data?.kind==="streamforge:theme")applyTheme(event.data.tokens);});
 function reportError(error) {
   const detail = String(error?.message || "Widget runtime error").replace(/[\r\n]/gu, " ").slice(0, 180);
   parent.postMessage({ kind: "streamforge:runtime-error", id: widgetId, detail }, "*");

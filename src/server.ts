@@ -62,7 +62,15 @@ const starterWidgets: WidgetMeta[] = [
   { id: "welcome-banner", title: "Welcome Banner", description: "A friendly message for new followers.", width: 460, height: 110, x: 0, y: 0, anchor: "bottom-right", enabled: true },
 ];
 const librarySeed = JSON.parse(await readFile(path.join(root, "library/catalog.json"), "utf8")) as LibraryEntry[];
-const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0 } };
+const themePresets = {
+  Halloween: { accent:"#ffb36b",accent2:"#a98aff",background:"#17101f",text:"#fff3e4",glow:"#ff7e46",radius:18,fontStack:"system-ui",animationSpeed:1 },
+  Neon: { accent:"#8afff0",accent2:"#ff65d8",background:"#101522",text:"#f1ffff",glow:"#46f5dc",radius:12,fontStack:"Arial",animationSpeed:1.25 },
+  Cozy: { accent:"#f5d6a0",accent2:"#f4a8b8",background:"#241c1a",text:"#fff5e8",glow:"#e8b879",radius:24,fontStack:"Georgia",animationSpeed:.8 },
+  Retro: { accent:"#ffe66d",accent2:"#ff70a6",background:"#21162a",text:"#fff4db",glow:"#ff70a6",radius:4,fontStack:"Trebuchet MS",animationSpeed:1 },
+  Clean: { accent:"#a9f5dc",accent2:"#aa8aff",background:"#17151f",text:"#f6f2ff",glow:"#a9f5dc",radius:16,fontStack:"system-ui",animationSpeed:1 },
+} as const;
+type ThemeTokens = { accent:string;accent2:string;background:string;text:string;glow:string;radius:number;fontStack:string;animationSpeed:number };
+const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0, themePreset:"Clean", themeTokens:themePresets.Clean } };
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
 catch { store = defaultStore; }
@@ -71,6 +79,7 @@ if (!Array.isArray(store.requestHistory)) store.requestHistory = [...store.reque
 if (!Array.isArray(store.library)) store.library = librarySeed;
 store.library = [...librarySeed.map((seed) => store.library.find((entry) => entry.id === seed.id) || seed), ...store.library.filter((entry) => !librarySeed.some((seed) => seed.id === entry.id))];
 store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
+if (!store.settings.themeTokens || typeof store.settings.themeTokens !== "object") store.settings.themeTokens = themePresets.Clean;
 
 async function persist(): Promise<void> {
   const tempPath = `${storePath}.${randomUUID()}.tmp`;
@@ -147,6 +156,35 @@ app.get("/api/requests/:id/preview", (req, res) => {
   res.send(`<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:12px;background:${background};color:#f6f2ff;font:14px system-ui}#widget{min-height:120px}</style><main id="widget"></main><script>const listeners=new Map();const api={root:document.querySelector('#widget'),on(n,f){listeners.set(n,[...(listeners.get(n)||[]),f])},sound:{play(){}},timers:{setTimeout,clearTimeout,setInterval,clearInterval},storage:{get(){return null},set(){}}};window.addEventListener('message',e=>{if(e.data?.kind==='streamforge:event')for(const fn of listeners.get(e.data.event?.type)||[])try{fn(e.data.event.payload||{})}catch(err){parent.postMessage({kind:'streamforge:draft-error',detail:String(err?.message||'Widget error').slice(0,160)},'*')}});try{const widget=(()=>{${safeSource}})();widget.mount(api)}catch(err){document.querySelector('#widget').textContent='Preview blocked: '+String(err?.message||'widget error').slice(0,120)}</script>`);
 });
 app.get("/api/library", (_req, res) => res.json(store.library));
+function validTheme(value: unknown): value is ThemeTokens {
+  if (!value || typeof value !== "object") return false;
+  const theme=value as Record<string,unknown>;const keys=["accent","accent2","background","text","glow","radius","fontStack","animationSpeed"];
+  return Object.keys(theme).length===keys.length&&keys.every((key)=>key in theme)&&["accent","accent2","background","text","glow"].every((key)=>typeof theme[key]==="string"&&/^#[0-9a-f]{6}$/iu.test(theme[key] as string))&&Number.isFinite(theme.radius)&&Number(theme.radius)>=0&&Number(theme.radius)<=40&&Number.isFinite(theme.animationSpeed)&&Number(theme.animationSpeed)>=.5&&Number(theme.animationSpeed)<=2&&["system-ui","Arial","Georgia","Trebuchet MS"].includes(String(theme.fontStack));
+}
+function applyTheme(preset:string,tokens:ThemeTokens):void { store.settings.themePreset=preset;store.settings.themeTokens=tokens;publish({type:"theme",preset,tokens}); }
+app.patch("/api/theme", async (req,res)=>{
+  const preset=typeof req.body?.preset==="string"?req.body.preset:"";
+  if(!(preset in themePresets))return res.status(400).json({error:"Choose Halloween, Neon, Cozy, Retro or Clean."});
+  const tokens=req.body?.tokens===undefined?themePresets[preset as keyof typeof themePresets]:req.body.tokens;
+  if(!validTheme(tokens))return res.status(400).json({error:"Theme tokens are invalid. Use safe hex colors, bounded values and an approved system font."});
+  applyTheme(preset,tokens);await persist();res.json({ok:true,preset,tokens});
+});
+app.post("/api/theme/generate", async(req,res)=>{
+  const prompt=typeof req.body?.prompt==="string"?req.body.prompt.slice(0,200):"";
+  if(!prompt.trim())return res.status(400).json({error:"Describe the theme you want."});
+  const text=prompt.toLowerCase();const preset=text.match(/spooky|halloween|haunt|rainy|night/)?"Halloween":text.match(/cozy|warm|soft/)?"Cozy":text.match(/neon|cyber|electric/)?"Neon":text.match(/retro|80s|arcade/)?"Retro":"Clean";
+  const tokens=themePresets[preset];applyTheme(preset,tokens);await persist();res.json({ok:true,preset,tokens,fallback:true,message:`Codex theme generation is unavailable in this development run; applied the closest preset, ${preset}.`});
+});
+const overlayKits:Record<string,{title:string;theme:keyof typeof themePresets;widgets:string[]}>= {
+  halloween:{title:"Halloween",theme:"Halloween",widgets:["screen-effects","countdown-timer","boss-bar"]},
+  cozy:{title:"Cozy stream",theme:"Cozy",widgets:["welcome-banner","goal-bar","countdown-timer"]},
+  neon:{title:"Neon arcade",theme:"Neon",widgets:["dice-roller","prediction-scoreboard","screen-effects"]},
+};
+app.post("/api/kits/:id",async(req,res)=>{
+  const kit=overlayKits[req.params.id];if(!kit)return res.status(404).json({error:"Overlay kit not found."});
+  for(const id of kit.widgets){const entry=store.library.find((item)=>item.widgetId===id);const widget=store.widgets.find((item)=>item.id===id);if(entry&&widget)widget.enabled=true;}
+  applyTheme(kit.theme,themePresets[kit.theme]);await persist();publish({type:"widgets",widgets:store.widgets});res.json({ok:true,title:kit.title,theme:kit.theme,widgets:kit.widgets});
+});
 app.get("/api/widgets/:id/export", async (req, res) => {
   const widget=store.widgets.find((item)=>item.id===req.params.id);
   if(!widget||!/^[a-z0-9-]{1,80}$/u.test(widget.id))return res.status(404).json({error:"Widget not found."});
@@ -398,6 +436,8 @@ app.post("/api/chat", async (req, res) => {
     const result = await undoWidget(undoMatch[1]);
     publish({ type: "moderation", message: result.ok ? "Widget version restored." : result.reason });
   }
+  const themeMatch=/^!theme\s+(Halloween|Neon|Cozy|Retro|Clean)$/iu.exec(message);
+  if(themeMatch&&req.body?.isMod===true){const preset=Object.keys(themePresets).find((name)=>name.toLowerCase()===themeMatch[1].toLowerCase())!;applyTheme(preset,themePresets[preset as keyof typeof themePresets]);await persist();}
   res.json({ ok: true });
 });
 app.post("/api/requests/:id/:action", async (req, res) => {
