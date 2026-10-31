@@ -52,3 +52,4 @@ label:has(> input[type=checkbox]),label:has(> input[type=radio]){display:flex;al
 @media(max-width:900px){.overview-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.overview-two-column{grid-template-columns:1fr}.overview-quick-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}.overview-widget-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.overview-stats{grid-template-columns:1fr}.overview-stats>.card{min-height:0}.overview-quick-grid,.overview-scene-grid,.overview-widget-grid{grid-template-columns:1fr}.overview-recap-controls{grid-template-columns:1fr}.overview-recap-controls>.row{justify-content:flex-start}#overview-demo #demo-steps{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.overview-section,.overview-section .disclosure-arrow{animation:none;transition:none}}
+.theme-swatch[aria-pressed="true"]{outline:3px solid var(--mint);outline-offset:2px;box-shadow:0 0 0 5px #a9f5dc20}

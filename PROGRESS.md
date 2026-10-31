@@ -4,6 +4,7 @@
 
 - Reproduced Overview defect A in the captured 1024×768 screenshot: the three stats cards stack in one column, Hype and Scene Presets form a single unstructured column, and section title/helper text run together. Existing QA reports no geometric overlap, so the root cause is missing Overview-specific grid/flex spacing rules rather than positioned elements. The current QA harness did not check the intended grid/collapse structure; added an audit that failed for the missing stats grid, paired Hype/Scene grid and summary spacing before the CSS fix.
 - Remaining reported defects (theme response, preview backgrounds, and Library reliability) will be reproduced and root-caused at their ordered stages before fixes.
+- Reproduced Stage 3 theme defect: the live recap overlay rendered its initial tokens but ignored later `theme` WebSocket messages. The old pixel check also falsely flagged five widget frames because it sampled one unchanged corner pixel; full-frame comparison corrects that audit method. The widget host already delivered preset values through `postMessage` to `api.theme` and shared CSS variables; all nine frames do consume the shared token CSS.
 
 ## Master baseline
 
@@ -167,3 +168,10 @@
 - Root cause was missing Overview-specific CSS rather than positional overlap. The enhanced `qa:ui` structural assertions reproduced the missing layouts before the fix. Afterward, QA reports zero overlap, horizontal overflow, clipped text, undersized controls, contrast issues or browser errors across all 8 pages × 4 viewports and overlay.
 - Verified `npx tsc --noEmit`, `OPEN_BROWSER=false npm run qa:ui`, and `git diff --check`.
 - Next: Phase 4B stage 3 trace and prove theme token response in sandboxed widgets.
+
+### Phase 4B stage 3: overlay theme presets
+
+- Done: traced preset selection → `/api/theme` → WebSocket host broadcast → `streamforge:theme` postMessage → validated runtime tokens/CSS variables. Added an internal source-correlatable theme acknowledgement for the sandboxed proof. Fixed the recap overlay to redraw its canvas when a live theme message arrives. Overview theme swatches now show one active state and update it without a reload.
+- Replaced the old single-corner sampling audit with full-frame per-widget pixel comparisons and exact token acknowledgement checks. `npm run test:theme-frames` covers all nine sandboxed widget frames, five presets, all eight CSS tokens, recap overlay live redraw and an exact Chat Runner palette allowlist. The old “unchanged widget” findings were sampling false positives, not widget source failures, so no widget color rules were loosened or unnecessary source edits made.
+- Verified the fake/local theme proof, `npx tsc --noEmit`, all viewport QA and `git diff --check`; no live Twitch/Codex behavior was used.
+- Next: Phase 4B stage 4 shared preview backgrounds across overlay, Build Studio and Library.

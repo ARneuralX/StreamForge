@@ -19,6 +19,7 @@
     "test:codex-verify": "npm run build && node scripts/check-codex-verify.mjs",
     "test:twitch-clips": "npm run build && node scripts/check-twitch-clips.mjs",
     "test:startup": "npm run build && node scripts/check-startup.mjs",
+    "test:theme-frames": "npm run build && node scripts/check-theme-frames.mjs",
     "start": "npm run build && node dist/server.js",
     "restart": "node scripts/restart.mjs",
     "test:widgets": "npm run build && node scripts/check-dice.mjs && node scripts/check-starter-pack.mjs",

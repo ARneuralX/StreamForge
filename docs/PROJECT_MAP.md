@@ -53,7 +53,7 @@ flowchart LR
 | `docs/QA_REPORT.md` | Phase 4B QA harness baseline, checks and known limits. |
 | `scripts/qa-ui.mjs` | Mock server + installed Chrome/CDP dashboard and overlay visual QA. |
 | `scripts/qa-phase3.mjs` | Phase 3 isolated browser/API smoke across pages and widgets. |
-| `scripts/check-*.mjs` | Focused widget, template, Passport, Hype, sessions, scenes, clips, multilingual, Demo Director, dotenv, OAuth, token store, IRC, EventSub, fake Twitch clips API, fake Codex runner, verification and replay checks; `*-api` scripts start local mock servers. |
+| `scripts/check-*.mjs` | Focused widget, template, Passport, Hype, sessions, scenes, clips, multilingual, Demo Director, dotenv, OAuth, token store, IRC, EventSub, fake Twitch clips API, sandboxed theme pixel/token proof, fake Codex runner, verification, replay and startup checks; `*-api` scripts start local mock servers. |
 | `scripts/diagnose-phase4b.mjs` | Phase 4B UI/preview diagnostic probe. |
 | `scripts/check-theme-frames.mjs` | Phase 4B sandbox frame theme-token diagnostic/check. |
 | `scripts/restart.mjs` | Stops the current local process on the configured port and restarts the app. |
