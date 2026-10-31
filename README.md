@@ -40,3 +40,5 @@ The Phase 2A mock queue now stores requests, history, votes and widget metadata 
 To preview the current overlay, use `http://localhost:3000/overlay/?feed=1`. The feed shows Received, Approved, Planning, Writing code, Safety checks and Live/Rolled back with elapsed time and check results. Build requests and vote counts appear in the Up next panel. Widget positions can be saved in the Widgets page using canvas coordinates; the layout engine shifts other widgets around them.
 
 Chat voting supports `!vote 2`, `vote 2` and `+1` (one vote per account per request). The Settings page selects manual approval, auto-build after a vote threshold or elapsed time, or auto-build for the simulated `Build a widget` channel-point redemption. The server serializes mock builds so only one runs at a time.
+
+The Widgets page shows version counts and Undo / Rollback controls. Undo is enabled when Git has an earlier committed version for that widget; the restored source must pass the same scan and mock-mount check. Moderators can also submit `undo <slug>` through the chat ingestion endpoint.

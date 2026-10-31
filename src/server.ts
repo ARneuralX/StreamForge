@@ -1,8 +1,9 @@
 import express from "express";
 import { createServer } from "node:http";
-import { readFile, mkdir, writeFile, rename, chmod, mkdtemp, rm } from "node:fs/promises";
+import { readFile, mkdir, writeFile, rename, chmod, mkdtemp, rm, copyFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { writeFile as writeWidgetFile } from "node:fs/promises";
@@ -11,7 +12,7 @@ import { checkWidgetSource } from "./security/widget-checks.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string };
-type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number } };
+type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; settings: Record<string, unknown>; codexVerification?: { time: string; ok: boolean; error?: string } };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -75,6 +76,12 @@ function redactDisplay(value: string): string {
 function publicRequest(request: Request): Request {
   return { ...request, text: redactDisplay(request.text), requester: redactDisplay(request.requester), voterIds: undefined };
 }
+async function widgetCommitHistory(widgetId: string): Promise<string[]> {
+  if (!/^[a-z0-9-]{1,80}$/u.test(widgetId) || widgetRoot !== path.join(root, "widgets")) return [];
+  try {
+    return execFileSync("git", ["log", "--follow", "--format=%H", "--", `widgets/${widgetId}/index.js`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\r?\n/u).filter(Boolean);
+  } catch { return []; }
+}
 const recentBuilds = new Map<string, number>();
 const blocklist = [/\bmalware\b/iu, /\bsteal\s+(?:a\s+)?token\b/iu, /\bkeylogger\b/iu];
 
@@ -99,7 +106,10 @@ app.use("/widgets", express.static(widgetRoot, {
 }));
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: process.env.TWITCH_LIVE_ENABLED === "true", chat: "needs_setup", eventSub: "needs_setup" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" } }));
-app.get("/api/state", (_req, res) => res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets: store.widgets, settings: store.settings, codexVerification: store.codexVerification }));
+app.get("/api/state", async (_req, res) => {
+  const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
+  res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, settings: store.settings, codexVerification: store.codexVerification });
+});
 app.post("/api/codex/verify", async (_req, res) => {
   const workingDirectory = await mkdtemp(path.join(os.tmpdir(), "streamforge-verify-"));
   const outputPath = path.join(workingDirectory, "verification.txt");
@@ -145,18 +155,28 @@ async function mockBuild(request: Request): Promise<void> {
     request.failure = "Real Codex builds are disabled during this development run.";
     setState(request, "failed"); buildFeed(request, "Rolled back", request.failure); await persist(); return;
   }
-  let source = ""; let widgetId = "";
+  let source = ""; let widgetId = ""; let promotedPath = ""; let draftDir = "";
   try {
     buildFeed(request, "Approved", "Request approved for the mock runner");
     setState(request, "building"); buildFeed(request, "Planning", "Preparing an isolated mock widget"); await persist();
     source = `export default {\n  meta: { title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right" },\n  mount(api) {\n    const card = document.createElement("section");\n    card.textContent = "Community widget ready";\n    api.root.append(card);\n    api.on("chat", (event) => { if (String(event.message || "").trim()) card.textContent = "Chat is part of this widget"; });\n  },\n};\n`;
     widgetId = `community-${request.id.slice(0, 8)}`;
-    await mkdir(path.join(widgetRoot, widgetId), { recursive: true });
-    await writeWidgetFile(path.join(widgetRoot, widgetId, "index.js"), source, { mode: 0o600 });
+    draftDir = path.join(dataDir, "drafts", request.id);
+    await mkdir(draftDir, { recursive: true });
+    const draftPath = path.join(draftDir, "index.js");
+    await writeWidgetFile(draftPath, source, { mode: 0o600 });
     buildFeed(request, "Writing code", "A mock runner wrote a safe starter widget");
     setState(request, "checking"); buildFeed(request, "Safety checks", "Running syntax, static scan and mock mount checks"); await persist();
     const result = await checkWidgetSource(source);
     if (!result.ok) throw new Error(result.reason || "Widget check failed.");
+    await mkdir(path.join(widgetRoot, widgetId), { recursive: true });
+    promotedPath = path.join(widgetRoot, widgetId, "index.js");
+    const promoteTemp = `${promotedPath}.${request.id}.tmp`;
+    await copyFile(draftPath, promoteTemp); await chmod(promoteTemp, 0o600); await rename(promoteTemp, promotedPath);
+    if (widgetRoot === path.join(root, "widgets")) {
+      execFileSync("git", ["add", "--", `widgets/${widgetId}/index.js`], { cwd: root, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", `Build mock widget ${widgetId}`], { cwd: root, stdio: "ignore" });
+    }
     const metadata: WidgetMeta = { id: widgetId, title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right", enabled: true };
     store.widgets.push(metadata);
     setState(request, "live"); buildFeed(request, "Live", "Widget passed checks and is ready on the overlay", result.checks);
@@ -166,15 +186,42 @@ async function mockBuild(request: Request): Promise<void> {
       try { await rm(path.join(widgetRoot, widgetId), { recursive: true, force: true }); } catch { /* rollback best effort */ }
       store.widgets = store.widgets.filter((widget) => widget.id !== widgetId);
     }
+    if (draftDir) await rm(draftDir, { recursive: true, force: true }).catch(() => {});
     request.failure = "Mock build failed a safety check; widget changes were rolled back.";
     if (["building", "checking", "live"].includes(request.status)) setState(request, "rolled_back");
     buildFeed(request, "Rolled back", request.failure); await persist();
   }
+  if (draftDir) await rm(draftDir, { recursive: true, force: true }).catch(() => {});
 }
 let buildChain: Promise<void> = Promise.resolve();
 function runBuild(request: Request): Promise<void> {
   buildChain = buildChain.then(() => mockBuild(request));
   return buildChain;
+}
+async function undoWidget(widgetId: string): Promise<{ ok: boolean; reason?: string }> {
+  const widget = store.widgets.find((item) => item.id === widgetId);
+  if (!widget || !/^[a-z0-9-]{1,80}$/u.test(widgetId) || widgetRoot !== path.join(root, "widgets")) return { ok: false, reason: "Widget is not available for version rollback." };
+  const versions = await widgetCommitHistory(widgetId);
+  if (versions.length < 2) return { ok: false, reason: "No earlier widget version is available yet." };
+  const relativePath = `widgets/${widgetId}/index.js`;
+  const source = execFileSync("git", ["show", `${versions[1]}:${relativePath}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const check = await checkWidgetSource(source);
+  if (!check.ok) return { ok: false, reason: check.reason || "The earlier version failed safety checks." };
+  const target = path.join(widgetRoot, widgetId, "index.js");
+  const backup = await readFile(target, "utf8");
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  await writeWidgetFile(temporary, source, { mode: 0o600 });
+  await rename(temporary, target);
+  try {
+    execFileSync("git", ["add", "--", relativePath], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", `Undo widget ${widgetId}`], { cwd: root, stdio: "ignore" });
+  } catch {
+    await writeWidgetFile(target, backup, { mode: 0o600 });
+    execFileSync("git", ["add", "--", relativePath], { cwd: root, stdio: "ignore" });
+    return { ok: false, reason: "Version rollback could not be committed; the current widget was restored." };
+  }
+  publish({ type: "widgets", widgets: store.widgets });
+  return { ok: true };
 }
 setInterval(() => {
   if (store.settings.approval !== "auto-votes") return;
@@ -222,6 +269,11 @@ app.post("/api/chat", async (req, res) => {
       if (threshold > 0 && request.votes >= threshold && store.settings.approval === "auto-votes") { setState(request, "approved"); await persist(); publish({type:"queue",requests:queued.map(publicRequest)}); await runBuild(request); }
     }
   }
+  const undoMatch = /^!?undo\s+([a-z0-9-]{1,80})$/iu.exec(message);
+  if (undoMatch && req.body?.isMod === true) {
+    const result = await undoWidget(undoMatch[1]);
+    publish({ type: "moderation", message: result.ok ? "Widget version restored." : result.reason });
+  }
   res.json({ ok: true });
 });
 app.post("/api/requests/:id/:action", async (req, res) => {
@@ -236,6 +288,11 @@ app.post("/api/requests/:id/:action", async (req, res) => {
   publish({ type: "request", request: publicRequest(request) });
   if (approved) await runBuild(request);
   res.json(publicRequest(request));
+});
+app.post("/api/widgets/:id/undo", async (req, res) => {
+  const result = await undoWidget(req.params.id);
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json({ ok: true, message: "Previous widget version restored." });
 });
 app.patch("/api/settings", async (req, res) => {
   const approval = req.body?.approval;
