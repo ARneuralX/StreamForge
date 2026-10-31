@@ -5,13 +5,23 @@ export default {
     title.textContent = "🎲 Chat Dice";
     const result = document.createElement("div");
     result.textContent = "Type !roll d20 to roll";
-    api.root.append(title, result);
+    const fireworks = document.createElement("div");
+    fireworks.className = "fireworks";
+    fireworks.setAttribute("aria-live", "polite");
+    api.root.append(title, result, fireworks);
     api.on("chat", (event) => {
       const message = String(event.message || "").trim().toLowerCase();
       if (!message.startsWith("!roll")) return;
       const roll = Math.floor(Math.random() * 20) + 1;
       result.textContent = `Rolled ${roll}${roll === 20 ? " — Critical! ✨" : ""}`;
-      if (roll === 20) api.sound?.play?.("sparkle");
+      if (roll === 20) {
+        fireworks.textContent = "🎆 ✦ ✨ ✦ 🎇";
+        fireworks.className = "fireworks active";
+        api.sound?.play?.("sparkle");
+      } else {
+        fireworks.textContent = "";
+        fireworks.className = "fireworks";
+      }
     });
   },
 };

@@ -10,7 +10,8 @@
     "codex:check": "node scripts/codex-check.mjs",
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && node dist/server.js",
-    "restart": "node scripts/restart.mjs"
+    "restart": "node scripts/restart.mjs",
+    "test:widgets": "npm run build && node scripts/check-dice.mjs"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.166.0",
