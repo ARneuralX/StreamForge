@@ -10,6 +10,7 @@
     "codex:check": "node scripts/codex-check.mjs",
     "build": "tsc -p tsconfig.json",
     "test:env": "npm run build && node scripts/check-env.mjs",
+    "test:twitch-oauth": "npm run build && node scripts/check-twitch-oauth.mjs",
     "start": "npm run build && node dist/server.js",
     "restart": "node scripts/restart.mjs",
     "test:widgets": "npm run build && node scripts/check-dice.mjs && node scripts/check-starter-pack.mjs",

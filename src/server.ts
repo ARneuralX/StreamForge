@@ -15,6 +15,7 @@ import { contrastRatio, nearestAccessibleText } from "./security/contrast.js";
 import { HypeEngine, type HypeSettings } from "./hype/engine.js";
 import { SessionManager, type SessionActivity } from "./sessions/manager.js";
 import { loadEnvFile, liveTwitchEnabled } from "./config/env.js";
+import { TwitchOAuth, type TwitchIdentity } from "./twitch/oauth.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
@@ -40,6 +41,14 @@ for (const [key, value] of Object.entries(await loadEnvFile(path.join(root, ".en
 }
 
 const port = Number(process.env.PORT || 3000);
+const twitchRedirectUri = `http://localhost:${port}/auth/twitch/callback`;
+const twitchOAuth = new TwitchOAuth({
+  clientId: process.env.TWITCH_CLIENT_ID || "",
+  clientSecret: process.env.TWITCH_CLIENT_SECRET || "",
+  redirectUri: twitchRedirectUri,
+  channel: process.env.TWITCH_CHANNEL || "",
+});
+let twitchIdentity: TwitchIdentity | undefined;
 
 await mkdir(dataDir, { recursive: true });
 const storePath = path.join(dataDir, "state.json");
@@ -659,14 +668,28 @@ app.delete("/api/widgets/:id", async (req, res) => {
   if(!widget)return res.status(404).json({error:"Widget not found."});
   widget.enabled=false;await persist();publish({type:"widgets",widgets:store.widgets});res.json({ok:true});
 });
-app.get("/auth/twitch", (_req, res) => {
-  if (!process.env.TWITCH_CLIENT_ID) return res.status(503).json({ error: "Add TWITCH_CLIENT_ID to .env before authorizing Twitch." });
-  const redirect = `http://localhost:${port}/auth/twitch/callback`;
-  const scopes=["user:read:chat","user:write:chat","channel:read:subscriptions"];if(_req.query.enableClips==="1")scopes.push("clips:edit");
-  const query = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, redirect_uri: redirect, response_type: "code", scope: scopes.join(" ") });
-  res.redirect(`https://id.twitch.tv/oauth2/authorize?${query}`);
+app.get("/auth/twitch", (req, res) => {
+  if (!liveTwitchEnabled(process.env)) return res.status(503).send("Live Twitch is disabled. Set TWITCH_LIVE_ENABLED=true to authorize.");
+  if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_CLIENT_SECRET || !process.env.TWITCH_CHANNEL) {
+    return res.status(503).send("Add TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET and TWITCH_CHANNEL to .env before authorizing Twitch.");
+  }
+  res.redirect(twitchOAuth.createAuthorizationUrl(req.query.enableClips === "1"));
 });
-app.get("/auth/twitch/callback", (_req, res) => res.status(501).send("Twitch token exchange is not configured yet."));
+app.get("/auth/twitch/callback", async (req, res) => {
+  if (!liveTwitchEnabled(process.env)) return res.status(503).send("Live Twitch is disabled.");
+  if (typeof req.query.error === "string") return res.status(400).send("Twitch authorization was not completed. Return to Settings to try again.");
+  if (typeof req.query.code !== "string" || typeof req.query.state !== "string") return res.status(400).send("Twitch authorization response was incomplete.");
+  try {
+    twitchIdentity = await twitchOAuth.completeAuthorization(req.query.code, req.query.state);
+    res.type("html").send("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Twitch authorized</title><body><h1>Twitch authorization received</h1><p>Return to StreamForge. Your token is held in memory until the secure persistence step completes.</p></body></html>");
+  } catch (error) {
+    const reason = String((error as Error).message || "");
+    const message = reason.startsWith("OAUTH_SCOPE_MISSING:")
+      ? `Twitch did not grant the required permissions: ${reason.slice("OAUTH_SCOPE_MISSING:".length)}. Reconnect and approve each permission.`
+      : "Twitch authorization could not be completed. Check your app settings and reconnect.";
+    res.status(400).send(message);
+  }
+});
 
 const http = createServer(app);
 const wss = new WebSocketServer({ server: http, path: "/ws" });

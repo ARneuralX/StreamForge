@@ -90,3 +90,11 @@
 - Updated Settings hints for the live switch and Codex runner mode. Added `npm run test:env` for these configuration rules.
 - Verified: `npm run test:env`, Settings JS syntax check, and `npx tsc --noEmit` pass.
 - Next: R2 OAuth, after validating all OAuth scopes and APIs against official Twitch docs.
+
+### Real integration step 2: Twitch OAuth
+
+- Done: added a separate OAuth service with one-use CSRF state (10 minute lifetime), exact localhost redirect URI, authorization-code exchange, token validation, client-id check, required-scope verification, and Helix user lookup for both the authorized account and configured broadcaster.
+- Scopes/event types were verified against official Twitch docs and recorded in `docs/TWITCH_INTEGRATIONS.md`: IRC `chat:read`; follow `moderator:read:followers` + `channel.follow` v2; subscription `channel:read:subscriptions` + `channel.subscribe` v1; custom reward redemption `channel:read:redemptions` + `channel.channel_points_custom_reward_redemption.add` v1; raid `channel.raid` v1 has no required scope. `clips:edit` is requested only via the explicit opt-in flow.
+- `/auth/twitch` and callback are gated by `TWITCH_LIVE_ENABLED=true`. Responses use generic errors except the missing scope names; tokens and raw upstream errors are not returned. Callback currently holds verified credentials in process memory until R3 adds secure persistence.
+- Verified with `npm run test:twitch-oauth`: fake endpoints covered state validation/reuse, exact redirect, scope set, token validation, identity lookup, and missing scope. TypeScript build passed as part of the script. No Twitch request was sent.
+- Next: R3 atomic token persistence, restrictive file mode, refresh, startup load, and disconnect.
