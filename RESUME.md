@@ -14,13 +14,19 @@
 - Verification: `node --check public/dashboard/pages/queue.js`, `node --check public/dashboard/app.js`, `npx tsc --noEmit`, every existing `test:*` script, `npm run qa:phase3`, `npm run check:library`, and `npm run qa:ui` passed. UI QA covered 8 pages × 4 existing viewports plus the overlay, with 0 browser diagnostics, failed requests or layout/accessibility findings. Isolated server checks required running outside the sandbox because local `127.0.0.1` listeners were denied (`EPERM`).
 - Commit/tag: `UI stage 4: build studio and queue`; `ui-s4`.
 
+## Stage 5 — Widgets and Library
+
+- Done: widget cards now use live sandboxed, lazy-loaded previews with the shared preview background, loading and health states, and offscreen render pausing. Added scene toggles, Remix/Export/Versions/Undo/Remove actions, a removal confirmation, position popovers, and expandable Passport chips.
+- Done: Library now has text search, event-based category filters, a drag-and-drop import zone with the existing validation route, sandboxed preview cards, and animated Add-to-scene feedback. Existing IDs, routes, sandbox attributes, data hooks and exports remain in place.
+- Verification: `npx tsc --noEmit`, all existing test scripts, `npm run check:library`, `npm run qa:phase3`, and `npm run qa:ui` passed. The Library check mounted 10 previews, delivered 16 Passport events, and verified concurrent Add/Remove/Import, duplicate-import messaging, Export and preview backgrounds. UI QA covered 8 pages × 4 existing viewports plus overlay with 0 browser diagnostics, failed requests, or layout/accessibility findings. Checks used mock mode, fake endpoints and isolated local data; no live Twitch traffic or real Codex build.
+- Commit/tag: `UI stage 5: widgets and library`; `ui-s5`.
+
 ## Next
 
-- Stage 5: Widgets and Library presentation.
 - Stage 6: Settings, Scenes, Sessions and Demo Director presentation.
 - Stage 7: reserve overlay HUD space and prevent widget collisions.
 - Stage 8: UI smoke, expanded QA, screenshots, documentation and regression.
 
 ## Known prerequisite gap
 
-- The prompt's design/motion system, four app themes plus Auto, app shell redesign and Overview redesign from stages 1–3 are absent at the starting checkpoint. This run does not claim or backfill those stages. Any stage 8 requirement that depends on those missing app themes must be recorded accurately.
+- The prompt's design/motion system and four app themes plus Auto from stages 1–2 are absent at the starting checkpoint. The shell and Overview already have project UI work, but stages 1–3 are not claimed or backfilled as part of this range. Any stage 8 requirement that depends on the missing app themes must be recorded accurately.
