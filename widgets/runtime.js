@@ -10,11 +10,17 @@ const api = {
   timers: { setTimeout: (...args) => window.setTimeout(...args), clearTimeout: (id) => window.clearTimeout(id), setInterval: (...args) => window.setInterval(...args), clearInterval: (id) => window.clearInterval(id) },
   storage: { get() { return null; }, set() {} },
 };
+function reportError(error) {
+  const detail = String(error?.message || "Widget runtime error").replace(/[\r\n]/gu, " ").slice(0, 180);
+  parent.postMessage({ kind: "streamforge:runtime-error", id: widgetId, detail }, "*");
+}
+window.addEventListener("error", (event) => reportError(event.error || new Error(event.message)));
+window.addEventListener("unhandledrejection", (event) => reportError(event.reason));
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || message.kind !== "streamforge:event") return;
   for (const handler of listeners.get(message.event?.type) || []) {
-    try { handler(message.event.payload || {}); } catch { /* isolate widget event failures */ }
+    try { handler(message.event.payload || {}); } catch (error) { reportError(error); }
   }
 });
 try {
@@ -24,5 +30,5 @@ try {
   parent.postMessage({ kind: "streamforge:mounted", id: widgetId }, "*");
 } catch (error) {
   root.textContent = `Widget could not start: ${String(error?.message || "unknown error")}`;
-  parent.postMessage({ kind: "streamforge:error", id: widgetId }, "*");
+  reportError(error);
 }

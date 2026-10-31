@@ -50,3 +50,7 @@ Phase 2A verification: `npx tsc --noEmit` and `npm run test:widgets` passed. Iso
 Remix requests use `!remix <widget name or id> <change>` in chat or the Remix form on the Widgets page. They join the ordinary queue and use its voting and approval rules. In this run, approval applies a fixed safe mock source update based on the existing widget; it does not invoke Codex or interpret the requested change into custom code. The prior Git version remains available for Undo.
 
 The Library contains six starter widgets: Prediction Scoreboard, Chat Boss Bar, Follow & Sub Goals, Live Chat Poll, Celebration Effects and Chat Countdown. Each card has a sandboxed running preview, its original prompt and creator. Add to scene and Remove are safe to repeat. Dashboard chat simulation sends poll, boss, countdown and dice commands; follow/sub/raid/redeem buttons exercise event-driven widgets.
+
+## Health and recovery
+
+Settings shows the current mock service health, queue depth and last safe error. Build settings include a retry preference (off by default) and a bounded build timeout. The current development runner is deterministic mock mode; it does not start real Codex builds or Twitch connections. Sandboxed widget runtime failures disable the affected widget and offer Undo when a previous Git version exists. A safe fallback panel appears if the dashboard section or overlay cannot load.

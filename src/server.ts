@@ -15,6 +15,12 @@ type Request = { id: string; text: string; requester: string; source: string; st
 type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean };
 type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; codexVerification?: { time: string; ok: boolean; error?: string } };
+type ErrorCode = "CODEX_NOT_LOGGED_IN" | "CODEX_LIMIT_REACHED" | "CODEX_TIMEOUT" | "CODEX_BAD_OUTPUT" | "CHECKS_FAILED" | "ROLLED_BACK" | "TWITCH_TOKEN_EXPIRED" | "CHAT_DISCONNECTED" | "EVENTSUB_DISCONNECTED" | "QUEUE_FULL" | "REQUEST_REJECTED" | "WIDGET_RUNTIME_ERROR";
+const errorMessages: Record<ErrorCode, string> = {
+  CODEX_NOT_LOGGED_IN: "Codex is not signed in. Sign in, then verify Codex in Settings.", CODEX_LIMIT_REACHED: "Codex has reached its usage limit. Builds are paused; try the Library or Replay mode.", CODEX_TIMEOUT: "The build took too long and was stopped.", CODEX_BAD_OUTPUT: "Codex did not create a usable widget file.", CHECKS_FAILED: "The widget did not pass the safety checks.", ROLLED_BACK: "The widget change was rolled back safely.", TWITCH_TOKEN_EXPIRED: "Your Twitch token expired. Reconnect Twitch.", CHAT_DISCONNECTED: "Twitch chat is disconnected. Check the connection in Settings.", EVENTSUB_DISCONNECTED: "Twitch event updates are disconnected. Reconnect Twitch.", QUEUE_FULL: "The build queue is full. Try again after a request finishes.", REQUEST_REJECTED: "That request needs moderator review.", WIDGET_RUNTIME_ERROR: "A widget stopped after a runtime error. Undo is available from Widgets.",
+};
+let lastError: { code: ErrorCode; at: string } | undefined;
+function recordError(code: ErrorCode): string { lastError = { code, at: new Date().toISOString() }; return errorMessages[code]; }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicRoot = path.join(root, "public");
@@ -126,7 +132,7 @@ app.use("/widgets", express.static(widgetRoot, {
   },
 }));
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: process.env.TWITCH_LIVE_ENABLED === "true", chat: "needs_setup", eventSub: "needs_setup" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" } }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: process.env.TWITCH_LIVE_ENABLED === "true", chat: "needs_setup", eventSub: "needs_setup", tokenExpiry: "not_connected" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
   res.json({ requests: store.requests.map(publicRequest), requestHistory: store.requestHistory.map(publicRequest), widgets, library: store.library, settings: store.settings, codexVerification: store.codexVerification });
@@ -328,6 +334,7 @@ setInterval(() => {
 app.post("/api/requests", async (req, res) => {
   const text = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 300) : "";
   if (!text) return res.status(400).json({ error: "Enter a widget request first." });
+  if (store.requests.filter((item) => item.status === "queued").length >= 100) return res.status(429).json({ error: recordError("QUEUE_FULL") });
   if (blocklist.some((rule) => rule.test(text))) return res.status(400).json({ error: "That request needs a manual moderator review." });
   const request = await createRequest(text, "Dashboard", "dashboard");
   res.status(201).json(publicRequest(request));
@@ -412,12 +419,27 @@ app.patch("/api/settings", async (req, res) => {
   if (approval !== undefined && !["manual", "auto-votes", "auto-points"].includes(approval)) return res.status(400).json({ error: "Choose manual, vote threshold, or channel points." });
   const votes = req.body?.autoBuildVotes === undefined ? undefined : Number(req.body.autoBuildVotes);
   const seconds = req.body?.autoBuildSeconds === undefined ? undefined : Number(req.body.autoBuildSeconds);
+  const buildTimeoutSeconds = req.body?.buildTimeoutSeconds === undefined ? undefined : Number(req.body.buildTimeoutSeconds);
+  const retryFailedBuildOnce = req.body?.retryFailedBuildOnce === undefined ? undefined : req.body.retryFailedBuildOnce;
   if (votes !== undefined && (!Number.isInteger(votes) || votes < 1 || votes > 1000)) return res.status(400).json({ error: "Vote threshold must be from 1 to 1000." });
   if (seconds !== undefined && (!Number.isInteger(seconds) || seconds < 0 || seconds > 86400)) return res.status(400).json({ error: "Build timer must be from 0 to 86400 seconds." });
+  if (buildTimeoutSeconds !== undefined && (!Number.isInteger(buildTimeoutSeconds) || buildTimeoutSeconds < 15 || buildTimeoutSeconds > 600)) return res.status(400).json({ error: "Build timeout must be from 15 to 600 seconds." });
+  if (retryFailedBuildOnce !== undefined && typeof retryFailedBuildOnce !== "boolean") return res.status(400).json({ error: "Retry setting must be on or off." });
   if (approval !== undefined) store.settings.approval = approval;
   if (votes !== undefined) store.settings.autoBuildVotes = votes;
   if (seconds !== undefined) store.settings.autoBuildSeconds = seconds;
+  if (buildTimeoutSeconds !== undefined) store.settings.buildTimeoutSeconds = buildTimeoutSeconds;
+  if (retryFailedBuildOnce !== undefined) store.settings.retryFailedBuildOnce = retryFailedBuildOnce;
   await persist(); res.json(store.settings);
+});
+app.post("/api/widgets/:id/runtime-error", async (req, res) => {
+  const widget = store.widgets.find((item) => item.id === req.params.id);
+  if (!widget) return res.status(404).json({ error: "Widget not found." });
+  widget.enabled = false;
+  const message = recordError("WIDGET_RUNTIME_ERROR");
+  await persist(); publish({ type: "widgets", widgets: store.widgets });
+  publish({ type: "runtimeError", widgetId: widget.id, message, error: lastError });
+  res.json({ ok: true, message });
 });
 app.post("/api/simulate/:event", (req, res) => {
   const allowed = new Set(["chat", "follow", "sub", "raid", "redeem"]);

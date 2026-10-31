@@ -9,6 +9,8 @@ if (params.has("feed")) document.querySelector("#feed").hidden = false;
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 let frames = new Map();
 let layoutItems = [];
+const toast = document.createElement("section");
+toast.className = "feed"; toast.hidden = true; toast.setAttribute("role", "alert"); document.querySelector("#canvas").append(toast);
 function positionFrames() {
   const scale = Math.min(innerWidth / 1920, innerHeight / 1080);
   for (const position of computeLayout(layoutItems)) {
@@ -18,6 +20,7 @@ function positionFrames() {
   }
 }
 async function load() {
+ try {
   const data = await (await fetch("/api/state")).json();
   const mode=data.settings.buildMode;
   document.querySelector("#badge").textContent=mode==="replay"?"DEMO MODE · recorded build":mode==="codex"?"LIVE BUILD MODE":"MOCK MODE · simulated events";
@@ -33,6 +36,10 @@ async function load() {
   const queued = data.requests.filter((item)=>item.status === "queued").sort((a,b)=>(b.votes||0)-(a.votes||0)).slice(0,3);
   const card=document.querySelector("#up-next");card.hidden=queued.length===0;
   document.querySelector("#up-next-list").innerHTML=queued.map((item)=>`<li>${escapeText(item.text)} <b>· ${item.votes||0} votes</b></li>`).join("");
+ } catch {
+   const region = document.querySelector("#widgets"); region.replaceChildren();
+   const card = document.createElement("section"); card.className = "feed"; card.setAttribute("role", "alert"); card.textContent = "The overlay could not load. Check that StreamForge is running, then refresh this browser source."; region.append(card);
+ }
 }
 function escapeText(value) { const element=document.createElement("span");element.textContent=String(value);return element.innerHTML; }
 addEventListener("resize", positionFrames);
@@ -55,4 +62,20 @@ socket.addEventListener("message", (event) => {
     document.querySelector("#feed-items").prepend(item);
   }
   if (message.type === "request" || message.type === "queue") load();
+});
+window.addEventListener("message", async (event) => {
+  const message = event.data;
+  if (!message || message.kind !== "streamforge:runtime-error") return;
+  const frame = frames.get(message.id);
+  if (!frame || event.source !== frame.contentWindow) return;
+  frame.remove(); frames.delete(message.id);
+  const response = await fetch(`/api/widgets/${encodeURIComponent(message.id)}/runtime-error`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ detail: String(message.detail || "").slice(0, 180) }) });
+  const result = await response.json().catch(() => ({}));
+  toast.hidden = false; toast.replaceChildren();
+  const text = document.createElement("p"); text.textContent = result.message || "A widget stopped after a runtime error."; toast.append(text);
+  const undo = document.createElement("button"); undo.textContent = "Undo widget"; undo.setAttribute("aria-label", `Undo ${message.id}`); undo.onclick = async () => {
+    const restored = await fetch(`/api/widgets/${encodeURIComponent(message.id)}/undo`, { method: "POST" });
+    if (restored.ok) { await fetch(`/api/widgets/${encodeURIComponent(message.id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true }) }); toast.textContent = "Previous widget version restored."; }
+    else toast.textContent = (await restored.json()).error || "No earlier version is available.";
+  }; toast.append(undo);
 });
