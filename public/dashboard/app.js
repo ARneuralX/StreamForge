@@ -25,6 +25,7 @@ async function render() {
   await status();
   if(revision!==renderRevision)return;
   const key = location.hash.slice(1) || "overview";
+  document.body.dataset.safeMode = state.settings.safeMode || "off";
   const page = pages[key] || pages.overview;
   links.forEach((link) => link.setAttribute("aria-current", link.dataset.page === key ? "page" : "false"));
   const pageRoot=root.cloneNode(false);
