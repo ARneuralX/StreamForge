@@ -52,7 +52,7 @@ When Web Speech recognition is supported, hold the microphone button beside the 
 
 Widgets export `default { meta, mount(api) }`; see [docs/WIDGET_API.md](docs/WIDGET_API.md). Frames use `sandbox="allow-scripts"` without `allow-same-origin`, and the widget CSP blocks network connections. The static scan blocks unsafe APIs, imports must pass a VM mock mount, widget changes use Git checkpoints, and rollback rechecks source. Widget event text is untrusted and rendered as text. Widget storage is mediated by the host, validated and size-limited.
 
-This development run uses the deterministic mock runner and simulated events. It does not run real Codex builds or real Twitch traffic. The mock runner uses a fixed safe fixture; it does not turn a request into custom source. Twitch OAuth code exchange and token persistence are implemented, while IRC, EventSub, real Codex builds, and stream-status checks remain to be completed. The Settings retry and timeout values are persisted for a future live runner; they do not produce a retry/timeout cycle in the deterministic mock path. Codex theme suggestions use preset fallback.
+This development run uses the deterministic mock runner and simulated events. It does not run real Codex builds or real Twitch traffic. The mock runner uses a fixed safe fixture; it does not turn a request into custom source. Twitch OAuth, token storage, and IRC client code are implemented. EventSub, real Codex builds, and stream-status checks remain to be completed; no live connection has been exercised. The Settings retry and timeout values are persisted for a future live runner; they do not produce a retry/timeout cycle in the deterministic mock path. Codex theme suggestions use preset fallback.
 
 ## Checks and screenshots
 

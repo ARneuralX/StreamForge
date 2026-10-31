@@ -17,6 +17,7 @@ import { SessionManager, type SessionActivity } from "./sessions/manager.js";
 import { loadEnvFile, liveTwitchEnabled } from "./config/env.js";
 import { TwitchOAuth } from "./twitch/oauth.js";
 import { TwitchTokenStore } from "./twitch/token-store.js";
+import { TwitchIrcClient } from "./twitch/irc-client.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
@@ -28,6 +29,10 @@ const errorMessages: Record<ErrorCode, string> = {
   CODEX_NOT_LOGGED_IN: "Codex is not signed in. Sign in, then verify Codex in Settings.", CODEX_LIMIT_REACHED: "Codex has reached its usage limit. Builds are paused; try the Library or Replay mode.", CODEX_TIMEOUT: "The build took too long and was stopped.", CODEX_BAD_OUTPUT: "Codex did not create a usable widget file.", CHECKS_FAILED: "The widget did not pass the safety checks.", ROLLED_BACK: "The widget change was rolled back safely.", TWITCH_TOKEN_EXPIRED: "Your Twitch token expired. Reconnect Twitch.", CHAT_DISCONNECTED: "Twitch chat is disconnected. Check the connection in Settings.", EVENTSUB_DISCONNECTED: "Twitch event updates are disconnected. Reconnect Twitch.", QUEUE_FULL: "The build queue is full. Try again after a request finishes.", REQUEST_REJECTED: "That request needs moderator review.", WIDGET_RUNTIME_ERROR: "A widget stopped after a runtime error. Undo is available from Widgets.", CLIP_DISABLED: "Auto-Clips is off. Enable it in Settings after Twitch authorization is available.", CLIP_SCOPE_MISSING: "Twitch authorization needs the clips:edit permission. Reauthorize to enable clip creation.", CLIP_NOT_LIVE: "The channel is not live, so no clip was created.", CLIP_COOLDOWN: "Auto-Clips is cooling down. No clip was created.", CLIP_SESSION_CAP: "This session reached its clip limit.", CLIP_RATE_LIMIT: "Twitch is rate limiting clip requests. Try again later.", CLIP_FAILED: "Twitch could not create a clip. No automatic retry was made.",
 };
 let lastError: { code: ErrorCode; at: string } | undefined;
+let chatState: "connected" | "needs_setup" | "error" = "needs_setup";
+let eventSubState: "connected" | "needs_setup" | "error" = "needs_setup";
+let chatError: string | undefined;
+let eventSubError: string | undefined;
 function recordError(code: ErrorCode): string { lastError = { code, at: new Date().toISOString() }; return errorMessages[code]; }
 function classifyCodexFailure(error:unknown):ErrorCode|undefined{const text=String((error as Error)?.message||error||"").toLowerCase();if(/usage limit|rate.?limit|quota|\b429\b/u.test(text))return "CODEX_LIMIT_REACHED";if(/not logged in|unauthori[sz]ed|authentication|sign.?in|\b401\b/u.test(text))return "CODEX_NOT_LOGGED_IN";if(/timed? ?out|timeout/u.test(text))return "CODEX_TIMEOUT";return undefined;}
 
@@ -201,8 +206,46 @@ app.use("/widgets", express.static(widgetRoot, {
   },
 }));
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: liveTwitchEnabled(process.env), chat: "needs_setup", eventSub: "needs_setup", token: twitchTokenStore.status() }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
+const twitchIrc = new TwitchIrcClient({
+  onMessage: async (message) => {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(message),
+      });
+    } catch {
+      chatState = "error";
+      chatError = "Twitch chat could not reach the local event handler.";
+    }
+  },
+  onStatus: (status) => {
+    chatState = status;
+    chatError = status === "error" ? "Twitch IRC disconnected; reconnecting quietly." : undefined;
+  },
+});
+
+async function connectTwitchChat(): Promise<void> {
+  const identity = twitchTokenStore.identity;
+  if (!liveTwitchEnabled(process.env) || !identity) {
+    twitchIrc.stop();
+    return;
+  }
+  try {
+    const accessToken = await twitchTokenStore.getFreshAccessToken();
+    if (!accessToken) return;
+    twitchIrc.start({ channel: identity.broadcasterLogin, login: identity.login, accessToken });
+  } catch {
+    chatState = "error";
+    chatError = "Twitch token expired, reconnect.";
+  }
+}
+
+app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: liveTwitchEnabled(process.env), chat: chatState, chatError: chatError || null, eventSub: eventSubState, eventSubError: eventSubError || null, token: twitchTokenStore.status() }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
 app.post("/api/twitch/disconnect", async (_req, res) => {
+  twitchIrc.stop();
+  chatState = "needs_setup";
+  chatError = undefined;
   await twitchTokenStore.disconnect();
   res.json({ ok: true, token: twitchTokenStore.status() });
 });
@@ -695,6 +738,7 @@ app.get("/auth/twitch/callback", async (req, res) => {
   try {
     const identity = await twitchOAuth.completeAuthorization(req.query.code, req.query.state);
     await twitchTokenStore.save(identity);
+    await connectTwitchChat();
     res.type("html").send("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Twitch authorized</title><body><h1>Twitch authorized</h1><p>Your credentials were validated and saved locally. Return to StreamForge.</p><p><a href=\"/dashboard/#settings\">Open Settings</a></p></body></html>");
   } catch (error) {
     const reason = String((error as Error).message || "");
@@ -726,6 +770,7 @@ http.on("error", (error: NodeJS.ErrnoException) => {
 http.listen(port, () => {
   const url = `http://localhost:${port}/dashboard/`;
   process.stdout.write(`StreamForge is ready at ${url}\n`);
+  if (liveTwitchEnabled(process.env) && twitchTokenStore.identity) void connectTwitchChat();
   if (process.env.OPEN_BROWSER !== "false") {
     const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
     const args = process.platform === "darwin" ? ["-a", "Google Chrome", url] : process.platform === "win32" ? ["/c", "start", "", url] : [url];

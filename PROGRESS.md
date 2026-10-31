@@ -106,3 +106,11 @@
 - Updated README and Auto-Clips docs because OAuth/token storage are now implemented; clip creation remains unavailable pending EventSub and stream-status.
 - Verified fake OAuth/token responses, restart loading, file permissions, atomic temp cleanup, early refresh, expired state, disconnect, and status redaction with `npm run test:twitch-token` and `npm run test:twitch-oauth`; TypeScript and Settings syntax pass.
 - Next: R4 IRC WebSocket with distinct handshake frames and fake socket tests.
+
+### Real integration step 4: IRC chat client
+
+- Done: added a WebSocket IRC client with separate `CAP REQ`, `PASS`, `NICK`, and `JOIN` frames, PING/PONG, tag/PRIVMSG parsing, moderator/bot/emote metadata, exponential reconnect backoff capped at one minute, and a quiet stop path. It uses the stored OAuth account and broadcaster identity.
+- Incoming messages go through the existing local `/api/chat` route, preserving its normalization, bot checks, command, vote, build/remix, and moderation handling. Chat and EventSub status/error fields are distinct.
+- Live Twitch remains gated by `TWITCH_LIVE_ENABLED=true`; startup connects chat only if a saved token exists. No Twitch socket was opened in tests.
+- Verified using the fake IRC socket (`npm run test:twitch-irc`), fake OAuth/token tests, `npx tsc --noEmit`, `git diff --check`, and `OPEN_BROWSER=false npm run qa:ui` (all eight pages at four sizes plus overlay; zero findings).
+- Next: R5 EventSub WebSocket subscriptions and normalized event routing.
