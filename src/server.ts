@@ -18,6 +18,7 @@ import { loadEnvFile, liveTwitchEnabled } from "./config/env.js";
 import { TwitchOAuth } from "./twitch/oauth.js";
 import { TwitchTokenStore } from "./twitch/token-store.js";
 import { TwitchIrcClient } from "./twitch/irc-client.js";
+import { TwitchEventSubClient } from "./twitch/eventsub-client.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
@@ -224,6 +225,14 @@ const twitchIrc = new TwitchIrcClient({
     chatError = status === "error" ? "Twitch IRC disconnected; reconnecting quietly." : undefined;
   },
 });
+const twitchEventSub = new TwitchEventSubClient({
+  clientId: process.env.TWITCH_CLIENT_ID || "",
+  onEvent: (event) => dispatchStreamEvent(event.type, event.payload, false),
+  onStatus: (status) => {
+    eventSubState = status === "connecting" ? "needs_setup" : status;
+    eventSubError = status === "error" ? "Twitch EventSub disconnected; reconnecting quietly." : undefined;
+  },
+});
 
 async function connectTwitchChat(): Promise<void> {
   const identity = twitchTokenStore.identity;
@@ -241,11 +250,48 @@ async function connectTwitchChat(): Promise<void> {
   }
 }
 
+async function connectTwitchEventSub(): Promise<void> {
+  if (!liveTwitchEnabled(process.env) || !twitchTokenStore.identity) {
+    twitchEventSub.stop();
+    return;
+  }
+  try {
+    const accessToken = await twitchTokenStore.getFreshAccessToken();
+    const identity = twitchTokenStore.identity;
+    if (!accessToken || !identity) return;
+    twitchEventSub.start({ accessToken, userId: identity.userId, broadcasterId: identity.broadcasterId });
+  } catch {
+    eventSubState = "error";
+    eventSubError = "Twitch token expired, reconnect.";
+  }
+}
+
+async function dispatchStreamEvent(eventType: "follow" | "sub" | "raid" | "redeem", payload: Record<string, unknown>, simulated: boolean): Promise<void> {
+  hypeEngine.addEvent(eventType, Date.now(), Number(payload.viewers) || 0);
+  const activity: Record<typeof eventType, SessionActivity> = { follow: "follows", sub: "subs", raid: "raids", redeem: "redemptions" };
+  void sessions.record(activity[eventType]);
+  publishHype();
+  publish({ type: "event", event: { type: eventType, payload, simulated, at: new Date().toISOString() } });
+
+  if (eventType !== "redeem" || store.settings.approval !== "auto-points" || payload.reward !== "Build a widget") return;
+  const candidate = typeof payload.user_input === "string" ? payload.user_input : "Make a channel point widget";
+  const validation = validateRequestText(candidate);
+  if (!validation.ok) return;
+  const request = await createRequest(validation.language!.normalized, "Channel point redeemer", "points", "build", undefined, validation.language);
+  if (request.manualReview) return;
+  setState(request, "approved");
+  await persist();
+  await runBuild(request);
+}
+
 app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: liveTwitchEnabled(process.env), chat: chatState, chatError: chatError || null, eventSub: eventSubState, eventSubError: eventSubError || null, token: twitchTokenStore.status() }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
 app.post("/api/twitch/disconnect", async (_req, res) => {
   twitchIrc.stop();
+  twitchEventSub.stop();
   chatState = "needs_setup";
+  eventSubState = "needs_setup";
   chatError = undefined;
+  eventSubError = undefined;
   await twitchTokenStore.disconnect();
   res.json({ ok: true, token: twitchTokenStore.status() });
 });
@@ -688,21 +734,21 @@ app.post("/api/widgets/:id/runtime-error", async (req, res) => {
   publish({ type: "runtimeError", widgetId: widget.id, message, error: lastError });
   res.json({ ok: true, message });
 });
-app.post("/api/simulate/:event", (req, res) => {
+app.post("/api/simulate/:event", async (req, res) => {
   const allowed = new Set(["chat", "follow", "sub", "raid", "redeem"]);
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
   const eventType = req.params.event;
-  if(eventType==="chat"){const commands=Array.isArray(req.body?.commands)?req.body.commands.slice(0,10).map(String):[String(req.body?.message||"")];for(const message of commands){hypeEngine.addChat("simulated-viewer",message);const commandName=/^\s*([!/?][\p{L}\p{N}_-]+)/u.exec(message)?.[1];void sessions.recordChat("simulated-viewer",commandName,"Simulated viewer",store.settings.includeChatterNames===true);}}
-  else{hypeEngine.addEvent(eventType,Date.now(),Number(req.body?.viewers)||0);const activity:Record<string,SessionActivity>={follow:"follows",sub:"subs",raid:"raids",redeem:"redemptions"};void sessions.record(activity[eventType]);publishHype();}
-  if (eventType === "chat" && Array.isArray(req.body?.commands)) {
-    for (const message of req.body.commands.slice(0,10)) publish({type:"event",event:{type:"chat",payload:{message:String(message).slice(0,100),user:"Player abc12",isMod:true},simulated:true,at:new Date().toISOString()}});
+  if (eventType === "chat") {
+    const commands = Array.isArray(req.body?.commands) ? req.body.commands.slice(0,10).map(String) : [String(req.body?.message || "")];
+    for (const message of commands) {
+      hypeEngine.addChat("simulated-viewer", message);
+      const commandName = /^\s*([!/?][\p{L}\p{N}_-]+)/u.exec(message)?.[1];
+      void sessions.recordChat("simulated-viewer", commandName, "Simulated viewer", store.settings.includeChatterNames === true);
+    }
+    publishHype();
+    for (const message of commands) publish({ type: "event", event: { type: "chat", payload: { message: String(message).slice(0,100), user: "Player abc12", isMod: true }, simulated: true, at: new Date().toISOString() } });
   } else {
-    const event = { type: eventType, payload: req.body ?? {}, simulated: true, at: new Date().toISOString() };
-    publish({ type: "event", event });
-  }
-  if (eventType === "redeem" && store.settings.approval === "auto-points" && req.body?.reward === "Build a widget") {
-    const candidate = typeof req.body?.user_input === "string" ? req.body.user_input : "Make a channel point widget";const validation=validateRequestText(candidate);
-    if(validation.ok){void createRequest(validation.language!.normalized,"Channel point redeemer","points","build",undefined,validation.language).then(async(request)=>{if(request.manualReview)return;setState(request,"approved");await persist();await runBuild(request);});}
+    await dispatchStreamEvent(eventType as "follow" | "sub" | "raid" | "redeem", req.body ?? {}, true);
   }
   res.json({ ok: true, simulated: true });
 });
@@ -739,6 +785,7 @@ app.get("/auth/twitch/callback", async (req, res) => {
     const identity = await twitchOAuth.completeAuthorization(req.query.code, req.query.state);
     await twitchTokenStore.save(identity);
     await connectTwitchChat();
+    await connectTwitchEventSub();
     res.type("html").send("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Twitch authorized</title><body><h1>Twitch authorized</h1><p>Your credentials were validated and saved locally. Return to StreamForge.</p><p><a href=\"/dashboard/#settings\">Open Settings</a></p></body></html>");
   } catch (error) {
     const reason = String((error as Error).message || "");
@@ -770,7 +817,10 @@ http.on("error", (error: NodeJS.ErrnoException) => {
 http.listen(port, () => {
   const url = `http://localhost:${port}/dashboard/`;
   process.stdout.write(`StreamForge is ready at ${url}\n`);
-  if (liveTwitchEnabled(process.env) && twitchTokenStore.identity) void connectTwitchChat();
+  if (liveTwitchEnabled(process.env) && twitchTokenStore.identity) {
+    void connectTwitchChat();
+    void connectTwitchEventSub();
+  }
   if (process.env.OPEN_BROWSER !== "false") {
     const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
     const args = process.platform === "darwin" ? ["-a", "Google Chrome", url] : process.platform === "win32" ? ["/c", "start", "", url] : [url];

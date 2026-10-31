@@ -114,3 +114,11 @@
 - Live Twitch remains gated by `TWITCH_LIVE_ENABLED=true`; startup connects chat only if a saved token exists. No Twitch socket was opened in tests.
 - Verified using the fake IRC socket (`npm run test:twitch-irc`), fake OAuth/token tests, `npx tsc --noEmit`, `git diff --check`, and `OPEN_BROWSER=false npm run qa:ui` (all eight pages at four sizes plus overlay; zero findings).
 - Next: R5 EventSub WebSocket subscriptions and normalized event routing.
+
+### Real integration step 5: Twitch EventSub
+
+- Done: added an EventSub WebSocket client for the verified follow v2, subscription v1, raid v1 and custom reward redemption v1 types. It uses the welcome session ID, creates subscriptions through Helix, observes keepalive timeouts, handles Twitch session reconnect migration, deduplicates notification IDs, and quietly reconnects with capped backoff.
+- Normalized live events go through the same stream-event dispatcher as simulated events, updating widgets, hype, sessions and channel-point request handling. Chat and EventSub errors remain separate.
+- Startup and successful OAuth callback now start both Twitch clients when `TWITCH_LIVE_ENABLED=true` and a token is available. Disconnect stops both. Live connections were not made.
+- Verified subscriptions, conditions, auth headers, normalized payloads, duplicate suppression, reconnect migration and stop with fake sockets/endpoints (`npm run test:eventsub`). Existing clips/demo mock APIs and TypeScript pass; `git diff --check` passes.
+- Next: R6 replace the mock-only runner with the real Codex SDK module; use only an injected fake SDK in checks.
