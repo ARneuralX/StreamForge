@@ -98,3 +98,11 @@
 - `/auth/twitch` and callback are gated by `TWITCH_LIVE_ENABLED=true`. Responses use generic errors except the missing scope names; tokens and raw upstream errors are not returned. Callback currently holds verified credentials in process memory until R3 adds secure persistence.
 - Verified with `npm run test:twitch-oauth`: fake endpoints covered state validation/reuse, exact redirect, scope set, token validation, identity lookup, and missing scope. TypeScript build passed as part of the script. No Twitch request was sent.
 - Next: R3 atomic token persistence, restrictive file mode, refresh, startup load, and disconnect.
+
+### Real integration step 3: token persistence
+
+- Done: `src/twitch/token-store.ts` writes `data/twitch-token.json` atomically with mode 0600, restores it on server startup, refreshes within five minutes of expiry (also on a one-minute timer), validates the refreshed identity/scopes, and deletes it on Disconnect Twitch. The existing `data/` ignore rule covers the token file.
+- Health exposes only non-secret authorization status, expiry and granted scope names. Settings shows token status and reconnect guidance; tokens remain absent from responses.
+- Updated README and Auto-Clips docs because OAuth/token storage are now implemented; clip creation remains unavailable pending EventSub and stream-status.
+- Verified fake OAuth/token responses, restart loading, file permissions, atomic temp cleanup, early refresh, expired state, disconnect, and status redaction with `npm run test:twitch-token` and `npm run test:twitch-oauth`; TypeScript and Settings syntax pass.
+- Next: R4 IRC WebSocket with distinct handshake frames and fake socket tests.

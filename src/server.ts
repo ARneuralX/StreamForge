@@ -15,7 +15,8 @@ import { contrastRatio, nearestAccessibleText } from "./security/contrast.js";
 import { HypeEngine, type HypeSettings } from "./hype/engine.js";
 import { SessionManager, type SessionActivity } from "./sessions/manager.js";
 import { loadEnvFile, liveTwitchEnabled } from "./config/env.js";
-import { TwitchOAuth, type TwitchIdentity } from "./twitch/oauth.js";
+import { TwitchOAuth } from "./twitch/oauth.js";
+import { TwitchTokenStore } from "./twitch/token-store.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
@@ -48,7 +49,15 @@ const twitchOAuth = new TwitchOAuth({
   redirectUri: twitchRedirectUri,
   channel: process.env.TWITCH_CHANNEL || "",
 });
-let twitchIdentity: TwitchIdentity | undefined;
+const twitchTokenStore = new TwitchTokenStore({
+  filePath: path.join(dataDir, "twitch-token.json"),
+  clientId: process.env.TWITCH_CLIENT_ID || "",
+  clientSecret: process.env.TWITCH_CLIENT_SECRET || "",
+});
+await twitchTokenStore.load();
+if (twitchTokenStore.identity) await twitchTokenStore.refreshIfNeeded();
+const twitchRefreshTimer = setInterval(() => { void twitchTokenStore.refreshIfNeeded(); }, 60_000);
+twitchRefreshTimer.unref();
 
 await mkdir(dataDir, { recursive: true });
 const storePath = path.join(dataDir, "state.json");
@@ -192,7 +201,11 @@ app.use("/widgets", express.static(widgetRoot, {
   },
 }));
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: liveTwitchEnabled(process.env), chat: "needs_setup", eventSub: "needs_setup", tokenExpiry: "not_connected" }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, buildMode: store.settings.buildMode, twitch: { enabled: liveTwitchEnabled(process.env), chat: "needs_setup", eventSub: "needs_setup", token: twitchTokenStore.status() }, codex: store.codexVerification?.ok ? { state: "verified", time: store.codexVerification.time } : { state: "needs_setup" }, queueDepth: store.requests.filter((item) => item.status === "queued").length, lastError: lastError ? { code: lastError.code, message: errorMessages[lastError.code], at: lastError.at } : null }));
+app.post("/api/twitch/disconnect", async (_req, res) => {
+  await twitchTokenStore.disconnect();
+  res.json({ ok: true, token: twitchTokenStore.status() });
+});
 app.get("/api/state", async (_req, res) => {
   const widgets = await Promise.all(store.widgets.map(async (widget) => { const versions = await widgetCommitHistory(widget.id); return { ...widget, versionCount: versions.length, canUndo: versions.length > 1 }; }));
   const tokens=store.settings.themeTokens as ThemeTokens;const themeContrast=validTheme(tokens)?{ratio:Number(contrastRatio(tokens.text,tokens.background).toFixed(2)),passes:contrastRatio(tokens.text,tokens.background)>=4.5}:null;
@@ -680,8 +693,9 @@ app.get("/auth/twitch/callback", async (req, res) => {
   if (typeof req.query.error === "string") return res.status(400).send("Twitch authorization was not completed. Return to Settings to try again.");
   if (typeof req.query.code !== "string" || typeof req.query.state !== "string") return res.status(400).send("Twitch authorization response was incomplete.");
   try {
-    twitchIdentity = await twitchOAuth.completeAuthorization(req.query.code, req.query.state);
-    res.type("html").send("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Twitch authorized</title><body><h1>Twitch authorization received</h1><p>Return to StreamForge. Your token is held in memory until the secure persistence step completes.</p></body></html>");
+    const identity = await twitchOAuth.completeAuthorization(req.query.code, req.query.state);
+    await twitchTokenStore.save(identity);
+    res.type("html").send("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Twitch authorized</title><body><h1>Twitch authorized</h1><p>Your credentials were validated and saved locally. Return to StreamForge.</p><p><a href=\"/dashboard/#settings\">Open Settings</a></p></body></html>");
   } catch (error) {
     const reason = String((error as Error).message || "");
     const message = reason.startsWith("OAUTH_SCOPE_MISSING:")
