@@ -246,6 +246,9 @@ app.use("/widgets", express.static(widgetRoot, {
     res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data:; media-src 'none'; connect-src 'none'; font-src 'self' data:");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
   },
 }));
 
@@ -612,7 +615,7 @@ async function mockBuild(request: Request): Promise<void> {
       source = originalSource.replace(/(\bdescription\s*:\s*)("[^"]*")/u, '$1"Updated by a safe mock remix"');
       if (source === originalSource) throw new Error("remix_target_not_supported");
     } else {
-      source = `export default {\n  meta: { title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right" },\n  mount(api) {\n    const card = document.createElement("section");\n    card.textContent = "Community widget ready";\n    api.root.append(card);\n    api.on("chat", (event) => { if (String(event.message || "").trim()) card.textContent = "Chat is part of this widget"; });\n  },\n};\n`;
+      source = `export default {\n  meta: { title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right" },\n  mount(api) {\n    const heading = document.createElement("h2");\n    heading.textContent = "Community widget";\n    const copy = document.createElement("p");\n    copy.textContent = "Ready for the stream";\n    api.root.replaceChildren(heading, copy);\n    api.on("chat", (event) => { if (String(event.message || "").trim()) copy.textContent = "Chat is part of this widget"; });\n  },\n};\n`;
       widgetId = `community-${request.id.slice(0, 8)}`;
     }
     request.widgetId = widgetId;

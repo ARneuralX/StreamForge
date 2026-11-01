@@ -6,6 +6,7 @@ window.addEventListener("message", (event) => {
   const message = event.data;
   const preview = activePreviews.get(message?.id);
   if (!preview || event.source !== preview.frame.contentWindow) return;
+  if (message.kind === "streamforge:layout-check" && Number.isFinite(message.height)) preview.frame.style.height = `${Math.max(48, Math.min(1080, Math.ceil(message.height)))}px`;
   if (message.kind === "streamforge:mounted") setHealth(preview.badge, "Mounted", "mounted");
   else if (message.kind === "streamforge:runtime-error") { setHealth(preview.badge, "Runtime error", "error"); preview.badge.title = "The sandboxed widget reported a runtime error."; }
   else if (message.kind === "streamforge:event-delivered") preview.badge.dataset.lastEventType = message.eventType;

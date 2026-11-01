@@ -2,6 +2,14 @@ import { readPreviewBackground, savePreviewBackground, setPreviewFrameBackground
 
 const buildStages = ["Received", "Approved", "Planning", "Writing code", "Safety checks", "Live"];
 let activeQueueTab = "pending";
+if (!window.__streamForgeQueueLayoutListener) {
+  window.__streamForgeQueueLayoutListener = true;
+  window.addEventListener("message", (event) => {
+    const frame = document.querySelector("#studio-frame");
+    if (!frame || event.source !== frame.contentWindow || event.data?.kind !== "streamforge:layout-check" || !Number.isFinite(event.data.height)) return;
+    frame.style.height = `${Math.max(48, Math.min(1080, Math.ceil(event.data.height)))}px`;
+  });
+}
 
 export async function queue(root, state, refresh) {
   const requests = [...state.requests].sort((a, b) => (b.votes || 0) - (a.votes || 0) || b.createdAt.localeCompare(a.createdAt));

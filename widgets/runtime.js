@@ -7,6 +7,22 @@ function applyTheme(tokens){if(!tokens||typeof tokens!=="object")return;const al
 const listeners = new Map();
 const root = document.querySelector("#widget");
 const widgetStorage=new Map();let storageLoaded=false;let resolveStorage;const storageReady=new Promise((resolve)=>{resolveStorage=resolve;window.setTimeout(()=>{storageLoaded=true;resolve();},300);});
+let layoutCheckTimer;
+function reportLayout(){
+  const nodes=[root,...root.querySelectorAll("*")];
+  const overflowing=nodes.filter((element)=>{
+    const style=getComputedStyle(element),text=element.textContent?.trim();
+    if(!text)return false;
+    const clipped=["hidden","clip"].includes(style.overflow)||["hidden","clip"].includes(style.overflowX)||["hidden","clip"].includes(style.overflowY);
+    return (clipped&&(element.scrollWidth>element.clientWidth+2||element.scrollHeight>element.clientHeight+2))||(style.whiteSpace.includes("nowrap")&&element.scrollWidth>element.clientWidth+2);
+  });
+  const height=Math.max(48,Math.min(1080,Math.ceil(Math.max(document.body.scrollHeight,root.scrollHeight+24,root.getBoundingClientRect().height+24))));
+  const cardStyle=getComputedStyle(root);
+  parent.postMessage({kind:"streamforge:layout-check",id:widgetId,height,ok:overflowing.length===0,overflowCount:overflowing.length,layout:{textAlign:cardStyle.textAlign,display:cardStyle.display,justifyContent:cardStyle.justifyContent,padding:cardStyle.padding}},"*");
+}
+function scheduleLayoutReport(){window.clearTimeout(layoutCheckTimer);layoutCheckTimer=window.setTimeout(()=>window.requestAnimationFrame(reportLayout),40);}
+new ResizeObserver(scheduleLayoutReport).observe(root);
+new MutationObserver(scheduleLayoutReport).observe(root,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:["class","style"]});
 const api = {
   root,
   theme: apiTheme,
@@ -44,6 +60,7 @@ try {
   if (!widget.default?.meta || typeof widget.default.mount !== "function") throw new Error("Widget export is incomplete.");
   await widget.default.mount(api);
   parent.postMessage({ kind: "streamforge:mounted", id: widgetId }, "*");
+  scheduleLayoutReport();
 } catch (error) {
   root.textContent = `Widget could not start: ${String(error?.message || "unknown error")}`;
   reportError(error);

@@ -2,6 +2,20 @@
 
 Widgets are ES modules at `widgets/<id>/index.js` and export a default object with `meta` and `mount(api)`.
 
+## Card layout and text
+
+The shared `widgets/widget.css` and frame host center widget content, add consistent responsive padding and spacing, wrap long text, and scale type with `clamp()`. Keep card content in normal document flow so the frame can measure it and grow to fit. Do not set a fixed `height`, `min-height`, absolute positioning, or clipping overflow on `api.root` or text containers. Use `api.root` as the card, append semantic elements such as headings and paragraphs, and keep text in those elements. For example:
+
+```js
+const heading = document.createElement("h2");
+heading.textContent = "A clear title";
+const copy = document.createElement("p");
+copy.textContent = "A message that can wrap onto as many lines as it needs.";
+api.root.replaceChildren(heading, copy);
+```
+
+Text must remain readable inside the card at narrow and wide overlay sizes. Do not use `white-space: nowrap`; keep long words breakable with `overflow-wrap:anywhere`. The frame host observes content changes, checks for clipped text, and resizes the iframe to the measured card height.
+
 ```js
 export default {
   meta: { title: "Example", description: "A small overlay", width: 420, height: 180, x: 0, y: 0, anchor: "top-left" },

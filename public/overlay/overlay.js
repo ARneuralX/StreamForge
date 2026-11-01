@@ -106,6 +106,14 @@ socket.addEventListener("message", (event) => {
 });
 window.addEventListener("message", async (event) => {
   const message = event.data;
+  if(message?.kind==="streamforge:layout-check"){
+    const widgetId=[...frames.entries()].find(([,frame])=>frame.contentWindow===event.source)?.[0];
+    if(!widgetId||widgetId!==message.id||!Number.isFinite(message.height))return;
+    const scale=Math.min(innerWidth/1920,innerHeight/1080),height=Math.max(48,Math.min(1080,Math.ceil(message.height/Math.max(scale,.1))));
+    const widget=layoutItems.find((item)=>item.id===widgetId);
+    if(widget&&Math.abs(widget.height-height)>1){widget.height=height;positionFrames();}
+    return;
+  }
   if(message?.kind==="streamforge:storage:set"){
     const widgetId=[...frames.entries()].find(([,frame])=>frame.contentWindow===event.source)?.[0];
     if(!widgetId||widgetId!==message.id)return;

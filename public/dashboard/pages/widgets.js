@@ -8,6 +8,7 @@ if (!window.__streamForgeWidgetPreviewListener) {
     const message = event.data;
     const preview = previews.get(message?.id);
     if (!preview || event.source !== preview.frame.contentWindow) return;
+    if (message.kind === "streamforge:layout-check" && Number.isFinite(message.height)) preview.frame.style.height = `${Math.max(48, Math.min(1080, Math.ceil(message.height)))}px`;
     if (message.kind === "streamforge:mounted") setPreviewHealth(preview, "Mounted", "mounted");
     if (message.kind === "streamforge:runtime-error") setPreviewHealth(preview, "Runtime error", "error");
   });
