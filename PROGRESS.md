@@ -217,5 +217,12 @@
 
 - Done: every queue card displays the four Received, Approved, Built and Live milestones and a plain-language next action. The persisted Built marker is set only after syntax, network, forbidden API and mock-mount checks pass. Failure and rollback cards keep their redacted reason and add a clear next action.
 - Done: centralized automatic promotion eligibility in a server-only policy function. It requires the `eligible` setting, all four checks to pass, moderator origin or explicit dashboard intent; chat viewer and other sources cannot promote automatically.
-- Verified: `npx tsc --noEmit`, `qa:ui` (five widget themes × eight pages at three desktop widths plus mobile on four pages, overlay and reduced motion), and `ui:smoke` passed with zero browser diagnostics, failed requests or layout/accessibility findings. Existing suite findings are recorded in the flow continuation; no real Twitch or Codex traffic was used.
+- Verified: `npx tsc --noEmit`, `qa:ui` (five widget themes × eight pages at three desktop widths plus mobile on four pages, overlay and reduced motion), and `ui:smoke` passed with zero browser diagnostics, failed requests or layout/accessibility findings. The existing Stage 2 full-suite findings are recorded in the flow continuation; no real Twitch or Codex traffic was used.
 - Next: Stage 4 automated flow regressions, final documentation and handoff.
+
+### Stage 4 — Tests and docs
+
+- Done: added `npm run test:flow` for all four check-failure cases, request-source and setting gates, moderator-only remove, Undo/Restore, viewer chat preview hold, and eligible moderator auto-promotion. Extended `ui:smoke` to verify the header tray after remove and restore. Updated old session/Phase 3 mock test drivers to explicitly approve checked drafts.
+- Updated README.md, RESUME.md and docs/QA_REPORT.md with usage steps and exact QA results.
+- Verified: `npx tsc --noEmit`, all existing test scripts including `test:flow`, `check:library`, `qa:phase3`, `qa:ui`, and `ui:smoke`. Every check passed except `test:theme-frames`, which finds the existing Chat Runner theme response at 0 changed pixels and committed community widget `#a855f7` outside its allowlist. No security scan/theme rule was relaxed. No real Codex build or Twitch traffic.
+- Flow simplification stages 1–4 are complete and checkpointed with `flow-s1` through `flow-s4`. Phase 5 has not been started.

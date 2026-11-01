@@ -38,9 +38,10 @@ try{
   if(!themeCheck)throw new Error("Theme validation, fallback, or kit idempotence failed.");
 
   await evaluate("location.hash='#queue'");await waitFor(async()=>evaluate("document.querySelector('#page h1')?.textContent==='Build Studio'"),"Build Studio");
-  const build=await evaluate(`(async()=>{const created=await fetch('/api/requests',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:'Build a safe community widget for the smoke check'})}).then(r=>r.json());const approved=await fetch('/api/requests/'+created.id+'/approve',{method:'POST'}).then(r=>r.json());return {id:created.id,status:approved.status}})()`);
-  if(build.status!=="live")throw new Error(`Mock build failed: ${JSON.stringify(build)}`);
-  await waitFor(async()=>evaluate("Boolean(document.querySelector('iframe[title=\"Preview - not live yet\"]'))"),"scanned Build Studio preview");
+  const build=await evaluate(`(async()=>{const created=await fetch('/api/requests',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:'Build a safe community widget for the smoke check'})}).then(r=>r.json());void fetch('/api/requests/'+created.id+'/approve',{method:'POST'});return {id:created.id}})()`);
+  await waitFor(async()=>evaluate("Boolean(document.querySelector('iframe[title=\"Draft widget preview\"]')&&document.querySelector('[data-draft-action=\"approve\"]'))"),"scanned Build Studio preview");
+  await evaluate("document.querySelector('[data-draft-action=\"approve\"]').click()");
+  await waitFor(async()=>evaluate(`fetch('/api/state').then(response=>response.json()).then(state=>state.requests.find(item=>item.id===${JSON.stringify(build.id)})?.status==='live')`),"mock build promoted after preview approval");
   await evaluate("document.querySelector('[data-simulate=chat]').click()");
 
   for(const [hash,title] of [["#widgets","Widgets"],["#library","Widget library"],["#settings","Settings"],["#overview","Overview"]]){

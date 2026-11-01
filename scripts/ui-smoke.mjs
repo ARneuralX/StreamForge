@@ -92,9 +92,21 @@ try {
   await waitFor(async () => evaluate("Boolean(document.querySelector('#safe-mode'))"), "Safe Mode control");
   await evaluate(`(()=>{document.querySelector('#safe-mode').value='minimal';document.querySelector('#apply-safe-mode').click();return true})()`);
   await waitFor(async () => evaluate("fetch('/api/state').then(response=>response.json()).then(state=>state.settings.safeMode==='minimal')"), "Safe Mode toggled");
+  const trayWidget=await evaluate("fetch('/api/state').then(response=>response.json()).then(state=>state.widgets.find(widget=>widget.enabled)?.id)");
+  if(!trayWidget)throw Error("The mock scene has no enabled widget for the header tray check.");
+  const traySelector=JSON.stringify(`[data-widget-id="${trayWidget}"][data-tray-action="remove"]`);
+  await evaluate("document.querySelector('#scene-tray').open=true");
+  await waitFor(async()=>evaluate(`Boolean(document.querySelector(${traySelector}))`),"live widget in On scene tray");
+  await evaluate(`document.querySelector(${traySelector}).click()`);
+  await waitFor(async()=>evaluate(`fetch('/api/state').then(response=>response.json()).then(state=>state.widgets.find(widget=>widget.id===${JSON.stringify(trayWidget)})?.sceneRemoved===true)`),"widget removed from scene through tray");
+  await evaluate("document.querySelector('#scene-tray-content .scene-tray-hidden').open=true");
+  const restoreSelector=JSON.stringify(`[data-widget-id="${trayWidget}"][data-tray-action="restore"]`);
+  await waitFor(async()=>evaluate(`Boolean(document.querySelector(${restoreSelector}))`),"removed widget in Restore tray");
+  await evaluate(`document.querySelector(${restoreSelector}).click()`);
+  await waitFor(async()=>evaluate(`fetch('/api/state').then(response=>response.json()).then(state=>state.widgets.find(widget=>widget.id===${JSON.stringify(trayWidget)})?.enabled===true&&state.widgets.find(widget=>widget.id===${JSON.stringify(trayWidget)})?.sceneRemoved===false)`),"tray Restore round trip");
   await sleep(250);
   if (browserErrors.length || failedRequests.length) throw Error(`Browser errors=${JSON.stringify(browserErrors)} failed requests=${JSON.stringify(failedRequests)}`);
-  process.stdout.write("PASS UI smoke: all 8 nav pages, queue idea, 5 simulated event controls, all 5 existing widget themes, Library Add and scene Undo, Safe Mode. Zero browser console errors or failed requests.\n");
+  process.stdout.write("PASS UI smoke: all 8 nav pages, queue idea, 5 simulated event controls, all 5 existing widget themes, Library Add/Remove/Restore, scene Undo, live header tray, Safe Mode. Zero browser console errors or failed requests.\n");
 } catch (error) {
   process.stderr.write(`FAIL UI smoke: ${error.stack || error}\n`);
   process.exitCode = 1;

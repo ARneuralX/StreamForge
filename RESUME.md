@@ -82,3 +82,11 @@
 - Done: automatic promotion is enforced by a server-only policy requiring the eligible setting, an eligible request origin, explicit dashboard intent when applicable, and all four safety checks true.
 - Verification: `npx tsc --noEmit`, `qa:ui` (5 widget themes × 8 pages at three desktop widths plus mobile Overview/Build Studio/Widgets/Library, overlay and reduced motion), and `ui:smoke` passed with zero diagnostics, failed requests or layout/accessibility findings. Stage 2’s full test batch was interrupted in `test:sessions`; the theme-frame findings remain recorded.
 - Next: Stage 4 tests for non-moderator chat, failed checks, disabled setting, undo/restore, moderator-only remove and tray state; update handoff docs and run final regression.
+
+### Stage 4 — Tests and docs
+
+- Done: added `npm run test:flow`. The mock integration check verifies viewer chat cannot auto-promote, each individual failed check blocks promotion, Ask me/Never block it, explicit eligible dashboard promotion and eligible moderator promotion work, moderator-only removal, 10-second Undo, restore round trips and server-backed scene state. `ui:smoke` now exercises the header tray against live API state.
+- Done: updated the session and Phase 3 smoke drivers to approve the checked draft instead of waiting forever for the previous implicit promotion behavior. Updated README, PROGRESS, this resume file and the QA report.
+- Verified: `npx tsc --noEmit`, every existing `test:*` script, `check:library`, `qa:phase3`, `qa:ui`, and `ui:smoke` were run in mock/replay mode. All passed except the existing `test:theme-frames` result: Chat Runner has 0 theme-changed pixels for four presets and committed `community-8a47430f` contains `#a855f7` outside the allowlist. No scans or theme restrictions were weakened. No real Codex build or Twitch traffic.
+- Commits/tags: Stage 1 `a160f9c` / `flow-s1`; Stage 2 `2441f05` / `flow-s2`; Stage 3 `d25f84e` / `flow-s3`; Stage 4 `Flow stage 4: tests and docs` / `flow-s4`.
+- Complete: Flow simplification stages 1–4 are implemented; Phase 5 remains unstarted.

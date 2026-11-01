@@ -5,9 +5,10 @@ export function mayPromoteAutomatically(input: {
   setting: PromotionSetting;
   source: PromotionSource;
   requested: boolean;
-  checksPassed: boolean;
+  checks: Record<string, unknown>;
 }): boolean {
-  if (input.setting !== "eligible" || !input.checksPassed) return false;
+  const checksPassed=["syntax","network","forbiddenApis","mockMount"].every(name=>input.checks[name]===true);
+  if (input.setting !== "eligible" || !checksPassed) return false;
   if (input.source === "moderator") return true;
   return input.source === "dashboard" && input.requested;
 }

@@ -577,8 +577,7 @@ async function requestDraftApproval(request: Request, widgetId: string, source: 
   draftPreviewPayloads.set(request.id, preview);
   await persist();
   const checkResults=checks&&typeof checks==="object"?checks as Record<string,unknown>:{};
-  const checksPassed=["syntax","network","forbiddenApis","mockMount"].every(name=>checkResults[name]===true);
-  const autoAllowed = mayPromoteAutomatically({ setting: store.settings.afterChecksPass as "ask"|"eligible"|"never", source: request.source as "dashboard"|"moderator"|"chat"|"points"|"other", requested: request.autoGoLiveRequested===true, checksPassed });
+  const autoAllowed = mayPromoteAutomatically({ setting: store.settings.afterChecksPass as "ask"|"eligible"|"never", source: request.source as "dashboard"|"moderator"|"chat"|"points"|"other", requested: request.autoGoLiveRequested===true, checks:checkResults });
   if (autoAllowed) {
     publish(preview);
     draftPreviewPayloads.delete(request.id);
