@@ -63,7 +63,7 @@ export async function widgets(root, state, refresh = async () => {}) {
     try {
       const response = await fetch(`/api/widgets/${input.dataset.toggle}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: input.checked }) });
       if (!response.ok) throw new Error("Could not update scene state.");
-      card.querySelector("[data-toggle-status]").textContent = input.checked ? "On scene" : "Off scene";
+      card.querySelector("[data-toggle-status]").textContent = input.checked ? "Shown on overlay" : "Hidden from overlay";
     } catch {
       input.checked = !input.checked;
       card.querySelector("[data-toggle-status]").textContent = "Could not save. Try again.";
@@ -109,7 +109,7 @@ export async function widgets(root, state, refresh = async () => {}) {
   });
   root.querySelectorAll("[data-delete-widget]").forEach((button) => button.onclick = async () => {
     const widget = state.widgets.find((item) => item.id === button.dataset.deleteWidget);
-    if (!window.confirm(`Remove ${widget?.title || "this widget"} from the overlay scene?`)) return;
+    if (!window.confirm(`Remove ${widget?.title || "this widget"} and delete its widget config and saved state?`)) return;
     button.disabled = true;
     try {
       const response = await fetch(`/api/widgets/${button.dataset.deleteWidget}`, { method: "DELETE" });
@@ -127,8 +127,8 @@ function widgetCard(widget, background) {
   const health = widget.passport?.scan?.passed ? "Safety checks passed" : "Safety status unavailable";
   return `<article class="card widget-card-rich" data-widget-id="${escapeText(widget.id)}">
     <div class="widget-preview-shell"><div class="widget-preview-top"><span class="widget-preview-name">${escapeText(widget.title)}</span><span class="preview-health" role="status" data-widget-health="${escapeText(widget.id)}" data-state="loading">Preview loading</span></div><div class="widget-preview-stage"><div class="preview-skeleton" data-label="Starting sandbox preview…" aria-hidden="true"></div><iframe class="widget-preview-frame" data-widget-id="${escapeText(widget.id)}" data-preview-src="${escapeText(previewUrl)}" title="Live preview: ${escapeText(widget.title)}" loading="lazy" sandbox="allow-scripts" referrerpolicy="no-referrer" src="${escapeText(previewUrl)}"></iframe></div></div>
-    <div class="widget-card-body"><div class="widget-card-heading"><div><span class="eyebrow">${widget.enabled ? "ON SCENE" : "AVAILABLE"}</span><h2>${escapeText(widget.title)}</h2></div><label class="switch-control" title="Toggle ${escapeText(widget.title)} on the overlay"><input type="checkbox" role="switch" data-toggle="${escapeText(widget.id)}" ${widget.enabled ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span><span class="sr-only">On scene</span></label></div>
-      <p>${escapeText(widget.description)}</p><div class="widget-card-meta"><span class="health-pill ${widget.passport?.scan?.passed ? "health-good" : ""}"><i aria-hidden="true">${widget.passport?.scan?.passed ? "✓" : "·"}</i>${health}</span><span class="small" data-toggle-status>${widget.enabled ? "On scene" : "Off scene"}</span></div>
+    <div class="widget-card-body"><div class="widget-card-heading"><div><span class="eyebrow">${widget.enabled ? "ON OVERLAY" : "HIDDEN"}</span><h2>${escapeText(widget.title)}</h2></div><label class="switch-control" title="Show ${escapeText(widget.title)} on the overlay"><input type="checkbox" role="switch" data-toggle="${escapeText(widget.id)}" ${widget.enabled ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span><span class="sr-only">Show on overlay</span></label></div>
+      <p>${escapeText(widget.description)}</p><div class="widget-card-meta"><span class="health-pill ${widget.passport?.scan?.passed ? "health-good" : ""}"><i aria-hidden="true">${widget.passport?.scan?.passed ? "✓" : "·"}</i>${health}</span><span class="small" data-toggle-status>${widget.enabled ? "Shown on overlay" : "Hidden from overlay"}</span></div>
       <div class="widget-actions"><button type="button" data-open-remix="${escapeText(widget.id)}" title="Ask for a widget remix">${icon("wand")}<span>Remix</span></button><button type="button" data-export-widget="${escapeText(widget.id)}" title="Export this widget">${icon("download")}<span>Export</span></button><details class="icon-popover"><summary title="Widget versions">${icon("layers")}<span>Versions</span></summary><p>${Number(widget.versionCount) || 1} ${Number(widget.versionCount) === 1 ? "saved version" : "saved versions"} in local Git history.</p></details><button type="button" data-undo="${escapeText(widget.id)}" title="Restore the previous version" ${widget.canUndo ? "" : "disabled"}>${icon("undo")}<span>Undo</span></button><button type="button" data-delete-widget="${escapeText(widget.id)}" title="Remove this widget from the overlay">${icon("trash")}<span>Remove</span></button></div>
       <form class="form-row remix-form" data-remix="${escapeText(widget.id)}" hidden><label>Describe a change<textarea maxlength="300" required placeholder="Add a teal glow when chat votes"></textarea></label><div class="row"><button class="primary" type="submit">Add remix request</button><span class="small" data-remix-result aria-live="polite"></span></div></form>
       <details class="passport passport-chips"><summary>Widget Passport · ${escapeText(widget.passport?.motionRisk || "unavailable")} motion risk</summary>${passportCard(widget.passport)}</details>

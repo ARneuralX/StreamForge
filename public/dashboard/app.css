@@ -136,6 +136,19 @@ label:has(> input[type=checkbox]),label:has(> input[type=radio]){display:flex;al
 @media(prefers-reduced-motion:reduce){.terminal-line,.terminal-cursor,.live-pulse,.build-progress span,.preview-skeleton{animation:none;transition:none}}
 @media(prefers-reduced-motion:reduce){body[data-safe-mode="minimal"] .terminal-line,body[data-safe-mode="minimal"] .terminal-cursor,body[data-safe-mode="minimal"] .preview-skeleton,body[data-safe-mode="reduced"] .terminal-line,body[data-safe-mode="reduced"] .preview-skeleton{animation:none}}
 
+.request-tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px}
+.request-tabs [role=tab]{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:7px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--muted);font:inherit;font-weight:700;cursor:pointer}
+.request-tabs [role=tab][aria-selected=true]{border-color:var(--purple);background:color-mix(in srgb,var(--purple) 18%,var(--panel));color:var(--text)}
+.request-tabs .tag{min-width:22px;text-align:center}
+.request-actions .danger{color:var(--rose,#ff9eae)}
+.draft-preview-card{display:grid;gap:14px;min-width:0}
+.draft-preview-heading{display:grid;gap:6px;min-width:0}
+.draft-preview-heading strong{overflow-wrap:anywhere}
+.draft-actions{display:flex;gap:8px;flex-wrap:wrap}
+.draft-edit-form{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.draft-edit-form[hidden]{display:none}
+.draft-edit-form textarea{width:100%;min-height:100px;resize:vertical}
+
 /* Stage 5: sandbox previews, widget management and Library discovery. */
 .widget-grid,.library-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
 .widget-card-rich{display:grid;gap:0;padding:0;overflow:visible}

@@ -1,5 +1,5 @@
 export default {
-  meta: { title: "Chat Runner", description: "Jump with !jump; moderators can tune the runner safely.", width: 480, height: 250, x: 0, y: 0, anchor: "center" },
+  meta: { title: "Chat Runner", description: "Jump with !jump; moderators can tune the runner safely.", width: 480, height: 280, x: 0, y: 0, anchor: "center" },
   mount(api) {
     const palettes={night:"#182033",purple:"#302044",forest:"#173b35",sunset:"#482a31"};
     const speeds={slow:1800,normal:1200,fast:800};

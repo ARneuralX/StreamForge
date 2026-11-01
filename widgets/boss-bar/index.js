@@ -1,5 +1,5 @@
 export default {
-  meta: { title: "Boss Bar", description: "Chat attacks the boss with !attack.", width: 500, height: 180, x: 0, y: 0, anchor: "bottom-left" },
+  meta: { title: "Boss Bar", description: "Chat attacks the boss with !attack.", width: 500, height: 220, x: 0, y: 0, anchor: "bottom-left" },
   mount(api) {
     let hp = 100;
     const title = document.createElement("h2"); title.textContent = "🐉 The Chat Boss";

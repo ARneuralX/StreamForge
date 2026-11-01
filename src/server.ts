@@ -73,13 +73,13 @@ const storePath = path.join(dataDir, "state.json");
 const starterWidgets: WidgetMeta[] = [
   { id: "dice-roller", title: "Dice Roller", description: "Roll a d20 with chat using !roll d20.", width: 440, height: 190, x: 32, y: 32, anchor: "top-left", enabled: true },
   { id: "prediction-scoreboard", title: "Prediction Scoreboard", description: "Chat votes with !a and !b.", width: 440, height: 210, x: 0, y: 0, anchor: "top-right", enabled: true },
-  { id: "boss-bar", title: "Chat Boss Bar", description: "Chat attacks and heals the boss with !attack and !heal.", width: 500, height: 180, x: 0, y: 0, anchor: "bottom-left", enabled: true },
-  { id: "goal-bar", title: "Follow & Sub Goals", description: "Track follower and subscriber progress live.", width: 500, height: 230, x: 0, y: 0, anchor: "top-left", enabled: true },
+  { id: "boss-bar", title: "Chat Boss Bar", description: "Chat attacks and heals the boss with !attack and !heal.", width: 500, height: 220, x: 0, y: 0, anchor: "bottom-left", enabled: true },
+  { id: "goal-bar", title: "Follow & Sub Goals", description: "Track follower and subscriber progress live.", width: 500, height: 270, x: 0, y: 0, anchor: "top-left", enabled: true },
   { id: "chat-poll", title: "Live Chat Poll", description: "Run an A/B poll with chat commands.", width: 440, height: 230, x: 0, y: 0, anchor: "top-right", enabled: true },
-  { id: "countdown-timer", title: "Chat Countdown", description: "A stream timer that chat can extend.", width: 420, height: 170, x: 0, y: 0, anchor: "bottom-right", enabled: true },
+  { id: "countdown-timer", title: "Chat Countdown", description: "A stream timer that chat can extend.", width: 420, height: 210, x: 0, y: 0, anchor: "bottom-right", enabled: true },
   { id: "screen-effects", title: "Celebration Effects", description: "Celebrate follows, subs and raids.", width: 420, height: 260, x: 0, y: 0, anchor: "center", enabled: true },
   { id: "welcome-banner", title: "Welcome Banner", description: "A friendly message for new followers.", width: 460, height: 110, x: 0, y: 0, anchor: "bottom-right", enabled: true },
-  { id: "chat-runner", title: "Chat Runner", description: "Jump with !jump and help configure the runner with safe chat commands.", width: 480, height: 250, x: 0, y: 0, anchor: "center", enabled: true },
+  { id: "chat-runner", title: "Chat Runner", description: "Jump with !jump and help configure the runner with safe chat commands.", width: 480, height: 280, x: 0, y: 0, anchor: "center", enabled: true },
 ];
 const librarySeed = JSON.parse(await readFile(path.join(root, "library/catalog.json"), "utf8")) as LibraryEntry[];
 type BuildTemplate = { id:string;category:string;title:string;description:string;prompt:string;time:string;widgetId?:string };
@@ -103,13 +103,16 @@ const defaultStore: Store = { requests: [], requestHistory: [], widgets: starter
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
 catch { store = defaultStore; }
-if (!Array.isArray(store.widgets) || store.widgets.length === 0) store.widgets = starterWidgets;
-for(const widget of starterWidgets)if(!store.widgets.some((existing)=>existing.id===widget.id))store.widgets.push(widget);
+store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
+const removedWidgetIds = new Set(Array.isArray(store.settings.removedWidgetIds) ? store.settings.removedWidgetIds.filter((id): id is string => typeof id === "string") : []);
+if (!Array.isArray(store.widgets) || store.widgets.length === 0) store.widgets = starterWidgets.filter((widget) => !removedWidgetIds.has(widget.id));
+for(const widget of starterWidgets)if(!removedWidgetIds.has(widget.id)&&!store.widgets.some((existing)=>existing.id===widget.id))store.widgets.push(widget);
+for(const widget of store.widgets)if(widget.id==="chat-runner"&&widget.height===250)widget.height=280;
+for(const widget of store.widgets){if(widget.id==="boss-bar"&&widget.height===180)widget.height=220;if(widget.id==="countdown-timer"&&widget.height===170)widget.height=210;if(widget.id==="goal-bar"&&widget.height===230)widget.height=270;}
 if (!Array.isArray(store.requestHistory)) store.requestHistory = [...store.requests];
 if (!Array.isArray(store.library)) store.library = librarySeed;
 store.widgetStorage ||= {};
 store.library = [...librarySeed.map((seed) => store.library.find((entry) => entry.id === seed.id) || seed), ...store.library.filter((entry) => !librarySeed.some((seed) => seed.id === entry.id))];
-store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
 if (["mock", "replay", "codex"].includes(process.env.BUILD_MODE || "")) store.settings.buildMode = process.env.BUILD_MODE;
 if (!store.settings.themeTokens || typeof store.settings.themeTokens !== "object") store.settings.themeTokens = themePresets.Clean;
 store.settings.safeMode ||= "off";
@@ -214,6 +217,9 @@ for(const entry of store.library){const widget=store.widgets.find((item)=>item.i
 if(store.widgets.some((widget)=>widget.passport))await persist();
 const recentBuilds = new Map<string, number>();
 const safeDrafts = new Map<string, string>();
+const draftApprovalWaiters = new Map<string, (approved: boolean) => void>();
+const draftPreviewPayloads = new Map<string, Record<string, unknown>>();
+const activeBuilds = new Map<string, Promise<void>>();
 const importLocks = new Map<string, Promise<void>>();
 const anonymousSessionSalt=randomUUID();
 
@@ -223,6 +229,12 @@ app.use(express.json({ limit: "256kb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
+app.use(["/dashboard", "/overlay"], (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   next();
 });
 
@@ -519,6 +531,8 @@ app.post("/api/library/:id/add", async (req, res) => {
   if (!widget) {
     const base = starterWidgets.find((item) => item.id === entry.widgetId);
     if (!base) return res.status(409).json({error:"Widget source is unavailable."});
+    const removedWidgetIds = Array.isArray(store.settings.removedWidgetIds) ? store.settings.removedWidgetIds.filter((id): id is string => typeof id === "string") : [];
+    store.settings.removedWidgetIds = removedWidgetIds.filter((id) => id !== base.id);
     widget = { ...base, enabled: true }; store.widgets.push(widget);
   } else widget.enabled = true;
   await persist(); publish({type:"widgets",widgets:store.widgets});
@@ -530,7 +544,7 @@ app.post("/api/codex/verify", async (_req, res) => {
   res.json(store.codexVerification);
 });
 const transitions: Record<BuildState, BuildState[]> = {
-  queued: ["approved", "failed"], approved: ["building", "failed"], building: ["checking", "failed", "rolled_back"], checking: ["live", "failed", "rolled_back"], live: ["rolled_back"], failed: [], rolled_back: [],
+  queued: ["approved", "failed"], approved: ["building", "failed"], building: ["checking", "failed", "rolled_back"], checking: ["live", "failed", "rolled_back", "queued"], live: ["rolled_back"], failed: ["queued"], rolled_back: ["queued"],
 };
 function setState(request: Request, next: BuildState): void {
   if (!transitions[request.status].includes(next)) throw new Error(`invalid_transition:${request.status}:${next}`);
@@ -550,6 +564,33 @@ async function createRequest(text: string, requester: string, source: string, ki
   buildFeed(request, "Received", "Request added to the queue");
   return request;
 }
+async function requestDraftApproval(request: Request, widgetId: string, source: string, checks: unknown): Promise<boolean> {
+  request.widgetId = widgetId;
+  safeDrafts.set(request.id, source);
+  const preview = { type: "draftPreview", request: publicRequest(request), requestId: request.id, url: `/api/requests/${request.id}/preview`, widgetId, checks };
+  draftPreviewPayloads.set(request.id, preview);
+  await persist();
+  const decision = new Promise<boolean>((resolve) => draftApprovalWaiters.set(request.id, resolve));
+  publish(preview);
+  return decision;
+}
+function settleDraftApproval(requestId: string, approved: boolean): boolean {
+  const resolve = draftApprovalWaiters.get(requestId);
+  if (!resolve) return false;
+  draftApprovalWaiters.delete(requestId);
+  draftPreviewPayloads.delete(requestId);
+  if (!approved) safeDrafts.delete(requestId);
+  resolve(approved);
+  publish({ type: "draftResolved", requestId, approved });
+  return true;
+}
+function requestBackupPath(requestId: string): string { return path.join(dataDir, "request-backups", requestId, "index.js"); }
+async function saveRequestWidgetBackup(requestId: string, source: string): Promise<void> {
+  const backup = requestBackupPath(requestId);
+  await mkdir(path.dirname(backup), { recursive: true, mode: 0o700 });
+  await writeWidgetFile(backup, source, { mode: 0o600 });
+  await chmod(backup, 0o600);
+}
 async function mockBuild(request: Request): Promise<void> {
   const buildStartedAt=Date.now();
   const buildMode = String(store.settings.buildMode || "mock");
@@ -567,12 +608,14 @@ async function mockBuild(request: Request): Promise<void> {
       if (!store.widgets.some((item) => item.id === widgetId) || !/^[a-z0-9-]{1,80}$/u.test(widgetId)) throw new Error("remix_widget_missing");
       const currentPath = path.join(widgetRoot, widgetId, "index.js");
       originalSource = await readFile(currentPath, "utf8");
+      await saveRequestWidgetBackup(request.id, originalSource);
       source = originalSource.replace(/(\bdescription\s*:\s*)("[^"]*")/u, '$1"Updated by a safe mock remix"');
       if (source === originalSource) throw new Error("remix_target_not_supported");
     } else {
       source = `export default {\n  meta: { title: "Community Widget", description: "A safe mock build from the request queue.", width: 420, height: 160, x: 0, y: 0, anchor: "top-right" },\n  mount(api) {\n    const card = document.createElement("section");\n    card.textContent = "Community widget ready";\n    api.root.append(card);\n    api.on("chat", (event) => { if (String(event.message || "").trim()) card.textContent = "Chat is part of this widget"; });\n  },\n};\n`;
       widgetId = `community-${request.id.slice(0, 8)}`;
     }
+    request.widgetId = widgetId;
     draftDir = path.join(dataDir, "drafts", request.id);
     await mkdir(draftDir, { recursive: true });
     const draftPath = path.join(draftDir, "index.js");
@@ -581,9 +624,8 @@ async function mockBuild(request: Request): Promise<void> {
     setState(request, "checking"); buildFeed(request, "Safety checks", "Running syntax, static scan and mock mount checks"); await persist();
     const result = await checkWidgetSource(source);
     if (!result.ok) throw new Error(result.reason || "Widget check failed.");
-    safeDrafts.set(request.id, source);
     buildFeed(request, "Safety checks", "Draft passed the static scan and mock mount; preview is not live yet", result.checks);
-    publish({ type: "draftPreview", request: publicRequest(request), requestId: request.id, url: `/api/requests/${request.id}/preview`, widgetId });
+    if (!await requestDraftApproval(request, widgetId, source, result.checks)) throw Object.assign(new Error("Draft was cancelled."), { code: "REQUEST_CANCELLED" });
     if (!isRemix) await mkdir(path.join(widgetRoot, widgetId), { recursive: true });
     const promotedPath = path.join(widgetRoot, widgetId, "index.js");
     const promoteTemp = `${promotedPath}.${request.id}.tmp`;
@@ -599,7 +641,12 @@ async function mockBuild(request: Request): Promise<void> {
     const promotedWidget=store.widgets.find((item)=>item.id===widgetId);if(promotedWidget){promotedWidget.passport=await widgetPassport(promotedWidget,source,result);const libraryEntry=store.library.find((item)=>item.widgetId===widgetId);if(libraryEntry)libraryEntry.passport=promotedWidget.passport;}
     setState(request, "live"); void sessions.recordBuild(buildStartedAt); buildFeed(request, "Live", "Widget passed checks and is ready on the overlay", result.checks);
     await persist(); publish({ type: "widgets", widgets: store.widgets });
-  } catch {
+  } catch (error) {
+    if ((error as { code?: string })?.code === "REQUEST_CANCELLED") {
+      if (draftDir) await rm(draftDir, { recursive: true, force: true }).catch(() => {});
+      safeDrafts.delete(request.id);
+      return;
+    }
     if (isRemix && widgetId && originalSource) {
       try { await writeWidgetFile(path.join(widgetRoot, widgetId, "index.js"), originalSource, { mode: 0o600 }); } catch { /* preserve rollback outcome */ }
     } else if (widgetId) {
@@ -627,6 +674,7 @@ async function codexBuild(request: Request): Promise<void> {
   let promoted = false;
   let sourceCommitted = false;
   let succeeded = false;
+  let cancelled = false;
   let finalChecks: { syntax: boolean; network: boolean; forbiddenApis: boolean; mockMount: boolean } | undefined;
 
   const emit = (stage: string, detail: string, checks?: { syntax: boolean; network: boolean; forbiddenApis: boolean; mockMount: boolean }) => {
@@ -641,6 +689,7 @@ async function codexBuild(request: Request): Promise<void> {
       const status = execFileSync("git", ["status", "--porcelain", "--", path.relative(root, targetPath)], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
       if (status.trim()) throw Object.assign(new Error(), { code: "CODEX_BAD_OUTPUT" });
       originalSource = await readFile(targetPath, "utf8");
+      await saveRequestWidgetBackup(request.id, originalSource);
     }
     if (widgetRoot === path.join(root, "widgets")) {
       execFileSync("git", ["diff", "--cached", "--quiet"], { cwd: root, stdio: "ignore" });
@@ -663,14 +712,12 @@ async function codexBuild(request: Request): Promise<void> {
       retryOnce: store.settings.retryFailedBuildOnce === true,
       checkSource: checkWidgetSource,
       onProgress: ({ stage, detail }) => emit(stage, detail),
-      onSafePreview: (source) => {
-        safeDrafts.set(request.id, source);
-        publish({ type: "draftPreview", request: publicRequest(request), requestId: request.id, url: `/api/requests/${request.id}/preview`, widgetId });
-      },
+      onSafePreview: (source) => { safeDrafts.set(request.id, source); },
     });
     if (request.status === "building") setState(request, "checking");
     finalChecks = { syntax: true, network: true, forbiddenApis: true, mockMount: true };
     emit("Safety checks", `Draft passed all checks in ${Math.round(result.elapsedMs / 1000)} seconds. Preview - not live yet.`, finalChecks);
+    if (!await requestDraftApproval(request, widgetId, result.source, finalChecks)) throw Object.assign(new Error("Draft was cancelled."), { code: "REQUEST_CANCELLED" });
 
     await mkdir(path.dirname(targetPath), { recursive: true });
     const promoteTemp = `${targetPath}.${request.id}.tmp`;
@@ -709,7 +756,10 @@ async function codexBuild(request: Request): Promise<void> {
     await persist();
     publish({ type: "widgets", widgets: store.widgets });
   } catch (error) {
-    if (promoted) {
+    if ((error as { code?: string })?.code === "REQUEST_CANCELLED") {
+      // The request was deliberately edited or deleted while awaiting draft approval.
+      cancelled = true;
+    } else if (promoted) {
       if (isRemix && originalSource) {
         const restorePath = `${targetPath}.${request.id}.rollback`;
         await writeWidgetFile(restorePath, originalSource, { mode: 0o600 }).catch(() => undefined);
@@ -728,18 +778,20 @@ async function codexBuild(request: Request): Promise<void> {
         } catch { /* filesystem restore remains the primary rollback */ }
       }
     }
-    const code = (error as CodexRunnerError)?.code;
-    request.failure = code ? codexFailureMessage(error as CodexRunnerError) : "Codex could not complete the widget build.";
-    if (["building", "checking", "live"].includes(request.status)) setState(request, "rolled_back");
-    else if (request.status === "approved") setState(request, "failed");
-    emit("Rolled back", request.failure);
-    await persist();
+    if ((error as { code?: string })?.code !== "REQUEST_CANCELLED") {
+      const code = (error as CodexRunnerError)?.code;
+      request.failure = code ? codexFailureMessage(error as CodexRunnerError) : "Codex could not complete the widget build.";
+      if (["building", "checking", "live"].includes(request.status)) setState(request, "rolled_back");
+      else if (request.status === "approved") setState(request, "failed");
+      emit("Rolled back", request.failure);
+      await persist();
+    }
   } finally {
     safeDrafts.delete(request.id);
     await rm(draftDirectory, { recursive: true, force: true }).catch(() => undefined);
     if (checkpointRef) execFileSync("git", ["update-ref", "-d", checkpointRef], { cwd: root, stdio: "ignore" });
     try {
-      await writeBuildRecording(replayDir, {
+      if (!cancelled) await writeBuildRecording(replayDir, {
         request: { text: redactDisplay(request.text).slice(0, 300), kind: request.kind || "build" },
         events,
         status: succeeded ? "live" : request.status === "rolled_back" ? "rolled_back" : "failed",
@@ -767,6 +819,7 @@ async function replayBuild(request: Request): Promise<void> {
     const check = await checkWidgetSource(source);
     const meta = parseCodexWidgetMeta(source);
     if (!check.ok || !meta) throw new Error("REPLAY_WIDGET_INVALID");
+    request.widgetId = recording.widgetId;
     setState(request, "building");
     const publishReplay = (stage: string, detail: string, checks?: unknown) => {
       publish({ type: "buildFeed", request: { ...publicRequest(request), simulated: true, source: "replay" }, stage, detail: redactDisplay(detail), checks, at: new Date().toISOString() });
@@ -779,6 +832,7 @@ async function replayBuild(request: Request): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
     if (request.status === "building") setState(request, "checking");
+    if (!await requestDraftApproval(request, recording.widgetId, source, check.checks)) throw Object.assign(new Error("Draft was cancelled."), { code: "REQUEST_CANCELLED" });
     let widget = store.widgets.find((item) => item.id === recording.widgetId);
     if (!widget) {
       widget = { id: recording.widgetId, ...meta, enabled: true };
@@ -790,7 +844,8 @@ async function replayBuild(request: Request): Promise<void> {
     publishReplay("Live", "DEMO MODE · recorded widget is active; no Codex task was started.", check.checks);
     await persist();
     publish({ type: "widgets", widgets: store.widgets });
-  } catch {
+  } catch (error) {
+    if ((error as { code?: string })?.code === "REQUEST_CANCELLED") return;
     request.failure = "The recorded widget is unavailable or failed the safety checks.";
     if (["building", "checking"].includes(request.status)) setState(request, "rolled_back");
     else if (request.status === "approved") setState(request, "failed");
@@ -802,8 +857,11 @@ let buildChain: Promise<void> = Promise.resolve();
 function runBuild(request: Request): Promise<void> {
   const mode = String(store.settings.buildMode || "mock");
   const runner = mode === "codex" ? codexBuild : mode === "replay" ? replayBuild : mockBuild;
-  buildChain = buildChain.then(() => runner(request));
-  return buildChain;
+  const run = buildChain.then(() => runner(request));
+  buildChain = run;
+  activeBuilds.set(request.id, run);
+  void run.then(() => { if (activeBuilds.get(request.id) === run) activeBuilds.delete(request.id); }, () => { if (activeBuilds.get(request.id) === run) activeBuilds.delete(request.id); });
+  return run;
 }
 async function undoWidget(widgetId: string): Promise<{ ok: boolean; reason?: string }> {
   const widget = store.widgets.find((item) => item.id === widgetId);
@@ -831,6 +889,76 @@ async function undoWidget(widgetId: string): Promise<{ ok: boolean; reason?: str
   publish({ type: "widgets", widgets: store.widgets });
   void sessions.record("rollbacks");
   return { ok: true };
+}
+async function removeRequestArtifacts(request: Request): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/iu.test(request.id)) throw new Error("Request id is invalid.");
+  const removeFromSavedScenes = async (widgetId: string) => {
+    const hadReference = userScenes.some((scene) => scene.widgetIds.includes(widgetId));
+    if (hadReference) {
+      userScenes = userScenes.map((scene) => ({ ...scene, widgetIds: scene.widgetIds.filter((id) => id !== widgetId) }));
+      await saveUserScenes();
+    }
+    const undo = store.settings.sceneUndo as { enabled?: Record<string, boolean> } | undefined;
+    if (undo?.enabled) delete undo.enabled[widgetId];
+  };
+  const generatedId = `community-${request.id.slice(0, 8)}`;
+  const widgetId = request.widgetId || (request.kind === "remix" ? "" : generatedId);
+  if (request.kind === "remix" && widgetId && /^[a-z0-9-]{1,80}$/u.test(widgetId)) {
+    const widget = store.widgets.find((item) => item.id === widgetId);
+    const backupPath = requestBackupPath(request.id);
+    const original = await readFile(backupPath, "utf8").catch(() => undefined);
+    if (request.status === "live" && original && widget) {
+      const target = path.join(widgetRoot, widgetId, "index.js");
+      const current = await readFile(target, "utf8").catch(() => "");
+      if (current !== original) {
+        const temporary = `${target}.${randomUUID()}.tmp`;
+        await writeWidgetFile(temporary, original, { mode: 0o600 });
+        await chmod(temporary, 0o600);
+        await rename(temporary, target);
+        if (widgetRoot === path.join(root, "widgets")) {
+          const relative = `widgets/${widgetId}/index.js`;
+          execFileSync("git", ["add", "--", relative], { cwd: root, stdio: "ignore" });
+          execFileSync("git", ["commit", "-m", `Remove remix request ${request.id}`], { cwd: root, stdio: "ignore" });
+        }
+      }
+      await refreshWidgetPassport(widget, original);
+    }
+    if (request.status === "live") {
+      if (widget) widget.enabled = false;
+      if (store.widgetStorage) delete store.widgetStorage[widgetId];
+      await removeFromSavedScenes(widgetId);
+    }
+    await rm(path.dirname(backupPath), { recursive: true, force: true });
+  } else if (request.kind !== "remix" && widgetId === generatedId && /^[a-z0-9-]{1,80}$/u.test(widgetId)) {
+    const target = path.resolve(widgetRoot, widgetId);
+    if (path.dirname(target) !== widgetRoot) throw new Error("Request widget path is invalid.");
+    await rm(target, { recursive: true, force: true });
+    if (widgetRoot === path.join(root, "widgets")) {
+      const relative = `widgets/${widgetId}`;
+      execFileSync("git", ["rm", "-r", "--ignore-unmatch", "--", relative], { cwd: root, stdio: "ignore" });
+      try {
+        execFileSync("git", ["diff", "--cached", "--quiet", "--", relative], { cwd: root, stdio: "ignore" });
+      } catch {
+        execFileSync("git", ["commit", "-m", `Delete request widget ${widgetId}`, "--", relative], { cwd: root, stdio: "ignore" });
+      }
+    }
+    store.widgets = store.widgets.filter((item) => item.id !== widgetId);
+    store.library = store.library.filter((item) => item.widgetId !== widgetId);
+    if (store.widgetStorage) delete store.widgetStorage[widgetId];
+    await removeFromSavedScenes(widgetId);
+  } else if (request.kind !== "remix" && widgetId && /^[a-z0-9-]{1,80}$/u.test(widgetId)) {
+    const widget = store.widgets.find((item) => item.id === widgetId);
+    if (widget) widget.enabled = false;
+    if (store.widgetStorage) delete store.widgetStorage[widgetId];
+    await removeFromSavedScenes(widgetId);
+  }
+  await rm(path.join(dataDir, "drafts", request.id), { recursive: true, force: true });
+  if (widgetId) await rm(path.join(dataDir, ".drafts", widgetId, request.id), { recursive: true, force: true });
+  await rm(path.dirname(requestBackupPath(request.id)), { recursive: true, force: true });
+  safeDrafts.delete(request.id);
+  draftPreviewPayloads.delete(request.id);
+  store.requests = store.requests.filter((item) => item.id !== request.id);
+  store.requestHistory = store.requestHistory.filter((item) => item.id !== request.id);
 }
 setInterval(() => {
   if (store.settings.approval !== "auto-votes") return;
@@ -920,6 +1048,63 @@ app.post("/api/requests/:id/:action", async (req, res) => {
   if (approved) await runBuild(request);
   res.json(publicRequest(request));
 });
+app.post("/api/requests/:id/draft/approve", (req, res) => {
+  const request = store.requests.find((item) => item.id === req.params.id);
+  if (!request) return res.status(404).json({ error: "Request not found." });
+  if (request.status !== "checking" || !settleDraftApproval(request.id, true)) return res.status(409).json({ error: "This request has no scanned draft waiting for approval." });
+  res.json(publicRequest(request));
+});
+app.patch("/api/requests/:id", async (req, res) => {
+  const request = store.requests.find((item) => item.id === req.params.id);
+  if (!request) return res.status(404).json({ error: "Request not found." });
+  if (request.status !== "checking" || !draftApprovalWaiters.has(request.id)) return res.status(409).json({ error: "Only a scanned draft can be edited here." });
+  const validation = validateRequestText(typeof req.body?.text === "string" ? req.body.text : "");
+  if (!validation.ok) return res.status(400).json({ error: validation.reason });
+  const active = activeBuilds.get(request.id);
+  settleDraftApproval(request.id, false);
+  if (active) await active;
+  request.text = validation.language!.normalized;
+  request.failure = undefined;
+  request.languageInstruction = validation.language && !validation.language.english ? `Keep visible widget text in the requester's ${validation.language.script} language when it fits. Keep code identifiers and comments in English.` : undefined;
+  if (validation.language) request.script = validation.language.script;
+  setState(request, "queued");
+  await persist();
+  publish({ type: "request", request: publicRequest(request) });
+  res.json(publicRequest(request));
+});
+app.post("/api/requests/:id/retry", async (req, res) => {
+  const request = store.requests.find((item) => item.id === req.params.id);
+  if (!request) return res.status(404).json({ error: "Request not found." });
+  if (!["rolled_back", "failed"].includes(request.status)) return res.status(409).json({ error: "Only failed or rolled back requests can be retried." });
+  request.failure = undefined;
+  setState(request, "queued");
+  setState(request, "approved");
+  await persist();
+  void runBuild(request);
+  res.json(publicRequest(request));
+});
+app.delete("/api/requests/:id", async (req, res) => {
+  const request = store.requests.find((item) => item.id === req.params.id);
+  if (!request) return res.status(404).json({ error: "Request not found." });
+  const active = activeBuilds.get(request.id);
+  if (active && !draftApprovalWaiters.has(request.id)) return res.status(409).json({ error: "Wait for the current build step to finish before deleting this request." });
+  if (draftApprovalWaiters.has(request.id)) settleDraftApproval(request.id, false);
+  if (active) await active;
+  await removeRequestArtifacts(request);
+  await persist();
+  publish({ type: "widgets", widgets: store.widgets });
+  publish({ type: "requestDeleted", requestId: request.id });
+  res.json({ ok: true });
+});
+app.delete("/api/requests", async (req, res) => {
+  if (req.query.status !== "rolled_back") return res.status(400).json({ error: "Only rolled back requests can be cleared in bulk." });
+  const rolledBack = store.requests.filter((item) => item.status === "rolled_back");
+  for (const request of rolledBack) await removeRequestArtifacts(request);
+  await persist();
+  publish({ type: "widgets", widgets: store.widgets });
+  publish({ type: "requestsCleared", status: "rolled_back", count: rolledBack.length });
+  res.json({ ok: true, removed: rolledBack.length });
+});
 app.post("/api/widgets/:id/undo", async (req, res) => {
   const result = await undoWidget(req.params.id);
   if (!result.ok) return res.status(409).json({ error: result.reason });
@@ -998,7 +1183,15 @@ app.patch("/api/widgets/:id", async (req, res) => {
 app.delete("/api/widgets/:id", async (req, res) => {
   const widget=store.widgets.find((item)=>item.id===req.params.id);
   if(!widget)return res.status(404).json({error:"Widget not found."});
-  widget.enabled=false;await persist();publish({type:"widgets",widgets:store.widgets});res.json({ok:true});
+  store.widgets=store.widgets.filter((item)=>item.id!==widget.id);
+  if(store.widgetStorage)delete store.widgetStorage[widget.id];
+  const removedWidgetIds=Array.isArray(store.settings.removedWidgetIds)?store.settings.removedWidgetIds.filter((id):id is string=>typeof id==="string"):[];
+  store.settings.removedWidgetIds=[...new Set([...removedWidgetIds,widget.id])];
+  const hadSceneReference=userScenes.some((scene)=>scene.widgetIds.includes(widget.id));
+  if(hadSceneReference){userScenes=userScenes.map((scene)=>({...scene,widgetIds:scene.widgetIds.filter((id)=>id!==widget.id)}));await saveUserScenes();}
+  const sceneUndo=store.settings.sceneUndo as {enabled?:Record<string,boolean>}|undefined;
+  if(sceneUndo?.enabled)delete sceneUndo.enabled[widget.id];
+  await persist();publish({type:"widgets",widgets:store.widgets});res.json({ok:true});
 });
 app.get("/auth/twitch", (req, res) => {
   if (!liveTwitchEnabled(process.env)) return res.status(503).send("Live Twitch is disabled. Set TWITCH_LIVE_ENABLED=true to authorize.");
@@ -1029,7 +1222,7 @@ app.get("/auth/twitch/callback", async (req, res) => {
 const http = createServer(app);
 const wss = new WebSocketServer({ server: http, path: "/ws" });
 const clients = new Set<WebSocket>();
-wss.on("connection", (socket) => { clients.add(socket); socket.on("close", () => clients.delete(socket)); socket.send(JSON.stringify({ type: "hello", at: new Date().toISOString() })); });
+wss.on("connection", (socket) => { clients.add(socket); socket.on("close", () => clients.delete(socket)); socket.send(JSON.stringify({ type: "hello", at: new Date().toISOString() })); for (const draft of draftPreviewPayloads.values()) socket.send(JSON.stringify(draft)); });
 function publish(payload: unknown): void {
   const message = JSON.stringify(payload);
   for (const client of clients) if (client.readyState === WebSocket.OPEN) client.send(message);

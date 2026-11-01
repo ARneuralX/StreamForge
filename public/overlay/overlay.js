@@ -22,8 +22,11 @@ function positionFrames() {
   const scale = Math.min(innerWidth / 1920, innerHeight / 1080);
   positionHudPanels();
   const zones = [...document.querySelectorAll("#badge,#remix-hint,#runner-hint,#hype-meter,#up-next,#feed,#simulated-badge,#scene-banner,.overlay-toast")].filter(isVisible).map((element) => hudZone(element, scale));
-  for (const position of computeLayout(layoutItems, { zones })) {
-    const frame = frames.get(position.id); if (!frame) continue;
+  const positions = new Map(computeLayout(layoutItems, { zones }).map((position) => [position.id, position]));
+  for (const [id, frame] of frames) {
+    const position = positions.get(id);
+    frame.style.display = position ? "block" : "none";
+    if (!position) continue;
     frame.style.left = `${position.x * scale}px`; frame.style.top = `${position.y * scale}px`;
     frame.style.width = `${position.width * scale}px`; frame.style.height = `${position.height * scale}px`;
   }
@@ -32,7 +35,10 @@ function isVisible(element) { const style=getComputedStyle(element);return !elem
 function hudZone(element,scale) { const rect=element.getBoundingClientRect(),padding=10;const left=Math.max(0,rect.left/scale-padding),top=Math.max(0,rect.top/scale-padding),right=Math.min(1920,rect.right/scale+padding),bottom=Math.min(1080,rect.bottom/scale+padding);return{x:left,y:top,width:Math.max(0,right-left),height:Math.max(0,bottom-top)}; }
 function positionHudPanels() {
   const feed=document.querySelector("#feed"),upNext=document.querySelector("#up-next"),toast=document.querySelector(".overlay-toast");
-  if(innerWidth>700){for(const panel of [feed,upNext,toast])if(panel)panel.style.bottom="";if(upNext)upNext.style.top="";return;}
+  const runnerHint=document.querySelector("#runner-hint"),simulated=document.querySelector("#simulated-badge");
+  if(innerWidth>700){for(const panel of [feed,upNext,toast])if(panel)panel.style.bottom="";if(upNext)upNext.style.top="";if(simulated)simulated.style.top="";return;}
+  if(runnerHint&&simulated&&isVisible(runnerHint)&&isVisible(simulated))simulated.style.top=`${Math.ceil(runnerHint.getBoundingClientRect().bottom+10)}px`;
+  else if(simulated)simulated.style.top="";
   let bottom=20;
   if(upNext)upNext.style.top="auto";
   for(const panel of [feed,upNext,toast])if(panel&&isVisible(panel)){panel.style.bottom=`${bottom}px`;bottom+=panel.getBoundingClientRect().height+12;}else if(panel)panel.style.bottom="";

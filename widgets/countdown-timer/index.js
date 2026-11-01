@@ -1,5 +1,5 @@
 export default {
-  meta: { title: "Chat Countdown", description: "A stream countdown chat can extend.", width: 420, height: 170, x: 0, y: 0, anchor: "bottom-right" },
+  meta: { title: "Chat Countdown", description: "A stream countdown chat can extend.", width: 420, height: 210, x: 0, y: 0, anchor: "bottom-right" },
   mount(api) {
     let remaining = 300;
     const title = document.createElement("h2"); title.textContent = "⏳ Stream countdown";

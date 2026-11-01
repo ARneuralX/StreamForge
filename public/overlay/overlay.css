@@ -39,3 +39,5 @@ html,body{font-family:system-ui,"Noto Sans Bengali","Noto Naskh Arabic","Noto Sa
 body[data-safe-mode="minimal"] .widget-frame,body[data-safe-mode="minimal"] #canvas.scene-transition .widget-frame{transition:none}
 body[data-safe-mode="minimal"] .recap-overlay,body[data-safe-mode="minimal"] #canvas[data-scene] .scene-banner{animation:none}
 @media(prefers-reduced-motion:reduce){.widget-frame,.scene-banner,.recap-overlay{transition:none!important;animation:none!important}}
+ .runner-hint,.remix-hint,.mode-badge,.simulated-badge,.feed-item,.up-next li{overflow-wrap:anywhere;word-break:normal}
+.feed-head{min-width:0;flex-wrap:wrap}.feed-head>*{min-width:0}.up-next li{line-height:1.4}

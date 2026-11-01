@@ -1,5 +1,5 @@
 export default {
-  meta: { title: "Follow & Sub Goals", description: "Live follower and subscriber progress.", width: 500, height: 230, x: 40, y: 300, anchor: "top-left" },
+  meta: { title: "Follow & Sub Goals", description: "Live follower and subscriber progress.", width: 500, height: 270, x: 40, y: 300, anchor: "top-left" },
   mount(api) {
     let follows = 0; let subs = 0;
     const title = document.createElement("h2"); title.textContent = "🌟 Community goals";
