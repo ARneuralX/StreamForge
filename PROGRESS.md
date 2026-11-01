@@ -206,3 +206,9 @@
 - Done: added split approval actions, a persisted server-side `afterChecksPass` setting (default Ask me), explicit Go live/Discard draft controls, and a 10-second Undo notification followed by Remove. The promotion gate still requires eligible source and successful existing checks; non-moderator chat stays at preview.
 - Verified: `npx tsc --noEmit` and the mock/fake service suite through `test:startup` passed. Full regression was attempted with `BUILD_MODE=mock` and Twitch forced off. `test:theme-frames` exposed pre-existing Chat Runner theme pixels and a committed community widget hardcoded-color finding; `check:library` exposed the pre-existing concurrent DELETE route returning 404. The remaining batch did not complete; rerun after Stage 2. No real Codex build or Twitch traffic.
 - Next: Stage 2 reversible scene removal and header tray, then repair/adjust relevant regression coverage without relaxing safety checks.
+
+### Stage 2 — Easy removal
+
+- Done: added the global On scene tray, toggle-off/remove/restore actions, reversible Library removal and a moderator-only `!remove <widget name>` command with Undo and Restore. Widgets page Delete remains explicit and preserves Git history.
+- Verified: `npx tsc --noEmit`, `OPEN_BROWSER=false npm run qa:ui`, `OPEN_BROWSER=false npm run ui:smoke`, JS syntax checks, `git diff --check`, and the updated `check:library` passed (10 sandboxed previews, concurrent Add/Remove/Import, restore and 16 events). The full regression batch passed through Hype and stalled in `test:sessions`; `test:theme-frames` remains a pre-existing failure on Chat Runner theme pixels and a committed community widget hardcoded color.
+- Next: Stage 3 clear request steps; Stage 4 policy, restore and tray integration tests.

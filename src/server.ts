@@ -25,7 +25,7 @@ import { verifyCodex } from "./codex/verify.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
 type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string; autoGoLiveRequested?:boolean };
-type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean; passport?: WidgetPassport };
+type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; sceneRemoved?: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean; passport?: WidgetPassport };
 type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string; passport?: WidgetPassport };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; widgetStorage?: Record<string, Record<string, unknown>>; codexVerification?: { time: string; ok: boolean; error?: string } };
 type ErrorCode = "CODEX_NOT_LOGGED_IN" | "CODEX_LIMIT_REACHED" | "CODEX_TIMEOUT" | "CODEX_BAD_OUTPUT" | "CHECKS_FAILED" | "ROLLED_BACK" | "TWITCH_TOKEN_EXPIRED" | "CHAT_DISCONNECTED" | "EVENTSUB_DISCONNECTED" | "QUEUE_FULL" | "REQUEST_REJECTED" | "WIDGET_RUNTIME_ERROR" | "CLIP_DISABLED" | "CLIP_SCOPE_MISSING" | "CLIP_NOT_LIVE" | "CLIP_COOLDOWN" | "CLIP_SESSION_CAP" | "CLIP_RATE_LIMIT" | "CLIP_FAILED";
@@ -219,6 +219,7 @@ if(store.widgets.some((widget)=>widget.passport))await persist();
 const recentBuilds = new Map<string, number>();
 const safeDrafts = new Map<string, string>();
 const draftApprovalWaiters = new Map<string, (approved: boolean) => void>();
+const removalUndo = new Map<string, { enabled: boolean; sceneRemoved?: boolean; expiresAt: number }>();
 const draftPreviewPayloads = new Map<string, Record<string, unknown>>();
 const activeBuilds = new Map<string, Promise<void>>();
 const importLocks = new Map<string, Promise<void>>();
@@ -422,7 +423,7 @@ function findScene(idOrName:string):ScenePreset|undefined{const normalized=idOrN
 let demoActive=false;let demoSnapshot:{enabled:Record<string,boolean>;themePreset:string;themeTokens:ThemeTokens;safeMode:string;hypeSensitivity:string;activeScene:string}|undefined;
 async function switchScene(scene:ScenePreset):Promise<void>{
   const previous={enabled:Object.fromEntries(store.widgets.map((widget)=>[widget.id,widget.enabled])),themePreset:store.settings.themePreset,themeTokens:store.settings.themeTokens,safeMode:store.settings.safeMode,hypeSensitivity:store.settings.hypeSensitivity,activeScene:store.settings.activeScene};
-  store.settings.sceneUndo=previous;for(const widget of store.widgets)widget.enabled=scene.widgetIds.includes(widget.id);
+  store.settings.sceneUndo=previous;for(const widget of store.widgets){widget.enabled=scene.widgetIds.includes(widget.id);if(widget.enabled)widget.sceneRemoved=false;}
   applyTheme(scene.theme,themePresets[scene.theme]);store.settings.safeMode=scene.safeMode;if(scene.hypeSensitivity)store.settings.hypeSensitivity=scene.hypeSensitivity;store.settings.activeScene=scene.id;
   await persist();publish({type:"widgets",widgets:store.widgets});publish({type:"safeMode",level:scene.safeMode,motionScale:motionScales[scene.safeMode]});publish({type:"hypeSettings",settings:{sensitivity:store.settings.hypeSensitivity,manualBoost:store.settings.manualHypeBoost,muted:store.settings.hypeMuted,reactive:store.settings.hypeReactive,overlayMeter:store.settings.overlayHypeMeter}});publish({type:"scene",scene:{id:scene.id,name:scene.name,transitionMs:700}});
 }
@@ -1042,6 +1043,19 @@ app.post("/api/chat", async (req, res) => {
     const result = await undoWidget(undoMatch[1]);
     publish({ type: "moderation", message: result.ok ? "Widget version restored." : result.reason });
   }
+  const removeMatch = /^!remove\s+(.+)$/iu.exec(message);
+  if (removeMatch && req.body?.isMod === true) {
+    const widget = resolveWidgetName(removeMatch[1]);
+    if (!widget) publish({ type: "moderation", message: "Widget not found. Use its name from the Widgets page." });
+    else {
+      removalUndo.set(widget.id, { enabled: widget.enabled, sceneRemoved: widget.sceneRemoved, expiresAt: Date.now() + 10_000 });
+      widget.enabled = false; widget.sceneRemoved = true;
+      await persist(); publish({ type: "widgets", widgets: store.widgets });
+      publish({ type: "removalToast", widgetId: widget.id, title: widget.title, undoSeconds: 10 });
+      publish({ type: "moderation", message: `${widget.title} is off scene. Restore it from the header tray or Undo within 10 seconds.` });
+      setTimeout(() => { const entry=removalUndo.get(widget.id); if(entry && entry.expiresAt<=Date.now()) removalUndo.delete(widget.id); }, 10_100).unref();
+    }
+  }
   const themeMatch=/^!theme\s+(Halloween|Neon|Cozy|Retro|Clean)$/iu.exec(message);
   if(themeMatch&&req.body?.isMod===true){const preset=Object.keys(themePresets).find((name)=>name.toLowerCase()===themeMatch[1].toLowerCase())!;applyTheme(preset,themePresets[preset as keyof typeof themePresets]);await persist();}
   const safeModeMatch=/^!safe-mode\s+(off|reduced|minimal)$/iu.exec(message);
@@ -1167,6 +1181,12 @@ app.post("/api/widgets/:id/runtime-error", async (req, res) => {
   publish({ type: "runtimeError", widgetId: widget.id, message, error: lastError });
   res.json({ ok: true, message });
 });
+app.post("/api/widgets/:id/undo-remove", async (req, res) => {
+  const widget=store.widgets.find(item=>item.id===req.params.id),pending=removalUndo.get(req.params.id);
+  if(!widget||!pending||pending.expiresAt<Date.now())return res.status(409).json({error:"The 10-second Undo window has expired."});
+  widget.enabled=pending.enabled;widget.sceneRemoved=pending.sceneRemoved;removalUndo.delete(widget.id);
+  await persist();publish({type:"widgets",widgets:store.widgets});res.json({ok:true,message:`${widget.title} restored to its previous scene state.`});
+});
 app.post("/api/simulate/:event", async (req, res) => {
   const allowed = new Set(["chat", "follow", "sub", "raid", "redeem"]);
   if (!allowed.has(req.params.event)) return res.status(400).json({ error: "Unsupported simulated event." });
@@ -1189,6 +1209,9 @@ app.patch("/api/widgets/:id", async (req, res) => {
   const widget = store.widgets.find((item) => item.id === req.params.id);
   if (!widget) return res.status(404).json({ error: "Widget not found." });
   if (typeof req.body?.enabled === "boolean") widget.enabled = req.body.enabled;
+  if (req.body?.removeFromScene === true) { widget.enabled = false; widget.sceneRemoved = true; }
+  if (req.body?.restoreFromScene === true) { widget.enabled = true; widget.sceneRemoved = false; }
+  else if (req.body?.enabled === true) widget.sceneRemoved = false;
   if (req.body?.position && typeof req.body.position === "object") {
     const x = Number(req.body.position.x); const y = Number(req.body.position.y);
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + widget.width > 1920 || y + widget.height > 1080) return res.status(400).json({ error: "Position must fit inside the 1920 × 1080 overlay." });

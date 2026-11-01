@@ -34,9 +34,11 @@ try{
   const addResponses=await Promise.all(Array.from({length:8},()=>post(`/api/library/${encodeURIComponent(starter.id)}/add`,{})));
   for(const response of addResponses)assert.equal(response.status,200,"concurrent Add is idempotent");
   let state=await get("/api/state");assert.equal(state.widgets.filter(widget=>widget.id===starter.widgetId).length,1);assert.equal(state.widgets.find(widget=>widget.id===starter.widgetId).enabled,true);
-  const removeResponses=await Promise.all(Array.from({length:8},()=>fetch(`${base}/api/widgets/${encodeURIComponent(starter.widgetId)}`,{method:"DELETE"})));
+  const removeResponses=await Promise.all(Array.from({length:8},()=>fetch(`${base}/api/widgets/${encodeURIComponent(starter.widgetId)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({removeFromScene:true})})));
   for(const response of removeResponses)assert.equal(response.status,200,"concurrent Remove is idempotent");
   state=await get("/api/state");assert.equal(state.widgets.filter(widget=>widget.id===starter.widgetId).length,1);assert.equal(state.widgets.find(widget=>widget.id===starter.widgetId).enabled,false);
+  const restored=await fetch(`${base}/api/widgets/${encodeURIComponent(starter.widgetId)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({restoreFromScene:true})});assert.equal(restored.status,200,"removed widget can be restored");
+  state=await get("/api/state");assert.equal(state.widgets.find(widget=>widget.id===starter.widgetId).enabled,true,"restore puts widget back on scene");assert.equal(state.widgets.find(widget=>widget.id===starter.widgetId).sceneRemoved,false,"restore clears removed marker");
 
   const importResponses=await Promise.all(Array.from({length:8},()=>post("/api/library/import",artifact)));
   for(const response of importResponses)assert.ok([200,201].includes(response.status),`concurrent Import status ${response.status}`);

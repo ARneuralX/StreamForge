@@ -22,6 +22,7 @@ async function render() {
   const revision=++renderRevision;
   await refresh();
   if(revision!==renderRevision)return;
+  renderSceneTray();
   await status();
   if(revision!==renderRevision)return;
   const key = location.hash.slice(1) || "overview";
@@ -72,10 +73,26 @@ async function status() {
     box.innerHTML = item("Twitch chat", chatState, chatHint) + item("EventSub", eventsState, eventsHint) + item("Codex", codexState, codexHint);
   } catch { /* visible page remains usable offline */ }
 }
+
+function renderSceneTray(){
+  const count=document.querySelector("#scene-tray-count"),content=document.querySelector("#scene-tray-content");
+  if(!count||!content)return;
+  const live=state.widgets.filter(widget=>widget.enabled),off=state.widgets.filter(widget=>!widget.enabled);
+  count.textContent=String(live.length);
+  const button=(widget,action,label,title)=>`<button type="button" data-tray-action="${action}" data-widget-id="${escapeTray(widget.id)}" title="${escapeTray(title)}" aria-label="${escapeTray(title)}">${label}</button>`;
+  content.innerHTML=`<strong>On scene</strong>${live.length?`<ul class="scene-tray-list">${live.map(widget=>`<li><span>${escapeTray(widget.title)}</span>${button(widget,"off","◉",`Turn off ${widget.title}`)}${button(widget,"remove","×",`Remove ${widget.title} from scene`)}</li>`).join("")}</ul>`:`<p class="small">No widgets are live.</p>`}<details class="scene-tray-hidden"><summary>Off or removed · ${off.length}</summary>${off.length?`<ul class="scene-tray-list">${off.map(widget=>`<li><span>${escapeTray(widget.title)}</span>${button(widget,"restore","↶",`Restore ${widget.title}`)}</li>`).join("")}</ul>`:`<p class="small">Nothing to restore.</p>`}</details>`;
+  content.querySelectorAll("[data-tray-action]").forEach(control=>control.onclick=async()=>{
+    control.disabled=true;const id=encodeURIComponent(control.dataset.widgetId),action=control.dataset.trayAction;
+    const body=action==="remove"?{removeFromScene:true}:action==="restore"?{restoreFromScene:true}:{enabled:false};
+    try{const response=await fetch(`/api/widgets/${id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!response.ok)throw new Error();await render();}
+    catch{control.disabled=false;control.title="Could not update scene state. Try again.";}
+  });
+}
+function escapeTray(value){return String(value).replace(/[&<>"']/gu,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char]));}
 status();
 setInterval(status, 10_000);
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message;if((message.type==="draftResolved"||message.type==="requestDeleted")&&(latestDraftPreview?.requestId===message.requestId||latestDraftPreview?.request?.id===message.requestId))latestDraftPreview=undefined;if(message.type==="liveToast"){showLiveToast(message);render();return;}if(message.type==="buildFeed"){latestBuildFeed.unshift(message);latestBuildFeed=latestBuildFeed.slice(0,40);render();return;}if(message.type==="hype"){paintHype(message.hype);return;}if(message.type==="hypeSettings")return; } catch { /* ignore malformed transport data */ } render(); });
+socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message;if((message.type==="draftResolved"||message.type==="requestDeleted")&&(latestDraftPreview?.requestId===message.requestId||latestDraftPreview?.request?.id===message.requestId))latestDraftPreview=undefined;if(message.type==="liveToast"){showLiveToast(message);render();return;}if(message.type==="removalToast"){showRemovalToast(message);render();return;}if(message.type==="buildFeed"){latestBuildFeed.unshift(message);latestBuildFeed=latestBuildFeed.slice(0,40);render();return;}if(message.type==="hype"){paintHype(message.hype);return;}if(message.type==="hypeSettings")return; } catch { /* ignore malformed transport data */ } render(); });
 
 function showLiveToast(message){
   document.querySelector("#live-toast")?.remove();
@@ -86,4 +103,10 @@ function showLiveToast(message){
   action.onclick=async()=>{action.disabled=true;try{const response=await fetch(`/api/widgets/${encodeURIComponent(message.widgetId)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:false})});if(!response.ok)throw new Error();toast.remove();await render();}catch{action.disabled=false;label.textContent="Could not take the widget off scene.";}};
   toast.append(label,action,close);document.body.append(toast);
   window.setTimeout(()=>{if(toast.isConnected&&action.textContent==="Undo"){action.textContent="Remove";action.setAttribute("aria-label",`Remove ${message.title} from scene`);}},Math.max(1,Number(message.undoSeconds)||10)*1000);
+}
+function showRemovalToast(message){
+  document.querySelector("#live-toast")?.remove();const toast=document.createElement("div");toast.id="live-toast";toast.className="live-toast";toast.setAttribute("role","status");
+  const label=document.createElement("span");label.textContent=`${message.title} was removed from scene.`;const action=document.createElement("button");action.className="primary";action.textContent="Undo";
+  const restore=async()=>{action.disabled=true;try{const response=await fetch(`/api/widgets/${encodeURIComponent(message.widgetId)}/undo-remove`,{method:"POST"});if(!response.ok)throw new Error();toast.remove();await render();}catch{action.disabled=false;label.textContent="Undo expired. Restore this widget from the header tray.";action.textContent="Dismiss";action.onclick=()=>toast.remove();}};
+  action.onclick=restore;toast.append(label,action);document.body.append(toast);window.setTimeout(()=>{if(toast.isConnected){action.textContent="Restore";action.onclick=async()=>{action.disabled=true;try{const response=await fetch(`/api/widgets/${encodeURIComponent(message.widgetId)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({restoreFromScene:true})});if(!response.ok)throw new Error();toast.remove();await render();}catch{action.disabled=false;label.textContent="Could not restore. Try from the header tray.";}};}},Math.max(1,Number(message.undoSeconds)||10)*1000);
 }
