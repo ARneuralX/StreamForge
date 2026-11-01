@@ -22,9 +22,10 @@ import { TwitchClipManager } from "./twitch/clips.js";
 import { codexFailureMessage, parseWidgetMeta as parseCodexWidgetMeta, runCodexWidgetBuild, type CodexRunnerError } from "./codex/runner.js";
 import { latestSuccessfulBuildRecording, writeBuildRecording, type BuildRecording, type RecordedBuildEvent } from "./codex/replay.js";
 import { verifyCodex } from "./codex/verify.js";
+import { mayPromoteAutomatically } from "./flow/promotion-policy.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
-type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string; autoGoLiveRequested?:boolean };
+type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string; autoGoLiveRequested?:boolean; built?:boolean };
 type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; sceneRemoved?: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean; passport?: WidgetPassport };
 type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string; passport?: WidgetPassport };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; widgetStorage?: Record<string, Record<string, unknown>>; codexVerification?: { time: string; ok: boolean; error?: string } };
@@ -575,8 +576,9 @@ async function requestDraftApproval(request: Request, widgetId: string, source: 
   const preview = { type: "draftPreview", request: publicRequest(request), requestId: request.id, url: `/api/requests/${request.id}/preview`, widgetId, checks };
   draftPreviewPayloads.set(request.id, preview);
   await persist();
-  const privileged = request.source === "dashboard" || request.source === "moderator";
-  const autoAllowed = store.settings.afterChecksPass === "eligible" && privileged && (request.source === "moderator" || request.autoGoLiveRequested === true);
+  const checkResults=checks&&typeof checks==="object"?checks as Record<string,unknown>:{};
+  const checksPassed=["syntax","network","forbiddenApis","mockMount"].every(name=>checkResults[name]===true);
+  const autoAllowed = mayPromoteAutomatically({ setting: store.settings.afterChecksPass as "ask"|"eligible"|"never", source: request.source as "dashboard"|"moderator"|"chat"|"points"|"other", requested: request.autoGoLiveRequested===true, checksPassed });
   if (autoAllowed) {
     publish(preview);
     draftPreviewPayloads.delete(request.id);
@@ -640,6 +642,7 @@ async function mockBuild(request: Request): Promise<void> {
     setState(request, "checking"); buildFeed(request, "Safety checks", "Running syntax, static scan and mock mount checks"); await persist();
     const result = await checkWidgetSource(source);
     if (!result.ok) throw new Error(result.reason || "Widget check failed.");
+    request.built = true;
     buildFeed(request, "Safety checks", "Draft passed the static scan and mock mount; preview is not live yet", result.checks);
     if (!await requestDraftApproval(request, widgetId, source, result.checks)) throw Object.assign(new Error("Draft was cancelled."), { code: "REQUEST_CANCELLED" });
     if (!isRemix) await mkdir(path.join(widgetRoot, widgetId), { recursive: true });
@@ -732,6 +735,7 @@ async function codexBuild(request: Request): Promise<void> {
     });
     if (request.status === "building") setState(request, "checking");
     finalChecks = { syntax: true, network: true, forbiddenApis: true, mockMount: true };
+    request.built = true;
     emit("Safety checks", `Draft passed all checks in ${Math.round(result.elapsedMs / 1000)} seconds. Preview - not live yet.`, finalChecks);
     if (!await requestDraftApproval(request, widgetId, result.source, finalChecks)) throw Object.assign(new Error("Draft was cancelled."), { code: "REQUEST_CANCELLED" });
 

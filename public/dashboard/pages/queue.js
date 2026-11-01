@@ -166,6 +166,10 @@ function requestCard(item, state) {
   const votes = Math.max(0, Number(item.votes) || 0);
   const percent = Math.min(100, Math.round(votes / threshold * 100));
   const terminal = item.failure ? `<div class="request-outcome" role="status"><strong>${escapeText(friendlyStatus(item.status))}</strong><p>${escapeText(item.failure)}</p><small>${escapeText(nextStep(item.failure))}</small></div>` : "";
+  const stepIndex = requestProgressIndex(item);
+  const failedStep = ["failed", "rolled_back"].includes(item.status) ? stepIndex : -1;
+  const requestSteps = ["Received", "Approved", "Built", "Live"];
+  const progress = `<section class="request-progress" aria-label="Request progress"><ol class="request-stepper">${requestSteps.map((label,index)=>`<li class="${index<stepIndex?"is-complete":index===failedStep?"is-failed":index===stepIndex?"is-current":""}" ${index===stepIndex?'aria-current="step"':""}><span class="step-mark">${index<stepIndex?"✓":index+1}</span><span>${label}</span></li>`).join("")}</ol><p class="request-next-action">${escapeText(requestNextAction(item))}</p></section>`;
   const widgetId = item.widgetId || (item.kind !== "remix" ? `community-${item.id.slice(0, 8)}` : "");
   const reviewActions = item.status === "queued" ? `<details class="approve-menu"><summary class="primary"><span aria-hidden="true">✓</span> Approve &amp; build</summary><div class="approve-options"><button type="button" data-action="approve" data-id="${escapeText(item.id)}">Approve &amp; build</button><button type="button" data-action="approve-auto" data-id="${escapeText(item.id)}">Approve, build and go live when checks pass</button><small>Automatic promotion requires the eligible streamer/moderator setting and passing every check.</small></div></details>` : "";
   const statusActions = item.status === "live" ? `<button class="secondary" data-action="offline" data-id="${escapeText(item.id)}" data-widget-id="${escapeText(widgetId)}" ${!widgetId || state.widgets.find((candidate) => candidate.id === widgetId)?.enabled === false ? "disabled" : ""}>${!widgetId || state.widgets.find((candidate) => candidate.id === widgetId)?.enabled === false ? "Offline" : "Take offline"}</button>` : item.status === "rolled_back" || item.status === "failed" ? `<button class="primary" data-action="retry" data-id="${escapeText(item.id)}">Retry</button>` : "";
@@ -177,7 +181,7 @@ function requestCard(item, state) {
     <p class="request-card-text">${escapeText(item.text)}</p>
     <div class="request-meta"><span class="tag">${escapeText(item.script || "Latin")}</span>${item.manualReview ? '<span class="tag">Manual review</span>' : ""}<span class="vote-summary">${votes} ${votes === 1 ? "vote" : "votes"}</span></div>
     <div class="vote-track" role="progressbar" aria-label="${votes} of ${threshold} votes" aria-valuemin="0" aria-valuemax="${threshold}" aria-valuenow="${Math.min(votes, threshold)}"><span style="--vote-progress:${percent}%"></span></div>
-    ${terminal}${actions}
+    ${progress}${terminal}${actions}
   </article>`;
 }
 
@@ -199,6 +203,24 @@ function nextStep(failure) {
   if (text.includes("limit")) return "Wait for the Codex usage limit to reset before trying again.";
   if (text.includes("rolled back")) return "The previous live widget was preserved. Review the safety result before retrying.";
   return "Check the safety result and adjust the request before trying again.";
+}
+
+function requestProgressIndex(item) {
+  if(item.status==="live")return 3;
+  if(item.status==="checking"&&item.built===true)return 2;
+  if(["failed","rolled_back"].includes(item.status))return item.built===true?2:1;
+  if(["approved","building","checking"].includes(item.status))return 1;
+  return 0;
+}
+function requestNextAction(item) {
+  if(item.status==="queued")return "Waiting for your OK";
+  if(item.status==="approved")return "Approved · the build is starting";
+  if(item.status==="building")return "Building your widget";
+  if(item.status==="checking")return item.built===true?"Ready for review":"Running safety checks";
+  if(item.status==="live")return "Live now";
+  if(item.status==="rolled_back")return "Rolled back safely. Review the reason, then retry if appropriate.";
+  if(item.status==="failed")return "Blocked. Review the reason and adjust the request before retrying.";
+  return "Request received";
 }
 
 function friendlyStatus(status) {

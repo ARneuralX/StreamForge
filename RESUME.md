@@ -67,11 +67,18 @@
 
 - Starting checkpoint: `9bc83ae` (`Checkpoint before flow simplification`). Follow `prompts/flow-simplify.md` stages 1–4 in order; this work remains within completed Phase 4B and does not start Phase 5.
 - Stage 1 implementation: queue approval now has explicit build and build-with-auto-promotion choices; Settings persists `afterChecksPass` (`ask` by default, `eligible`, or `never`); the server gates automatic promotion by setting, request origin and successful completion of all existing checks. Non-moderator chat requests always wait at the checked draft. Build Studio labels the final actions Go live and Discard, and live promotion emits a 10-second Undo notification that then reads Remove.
-- Stage 1 verification: `npx tsc --noEmit` passed. Fake service tests through `test:twitch-clips` and startup passed. The complete suite was attempted with mock mode and Twitch disabled; `test:theme-frames` failed on the existing Chat Runner theme response and a committed community widget color, while `check:library` failed its concurrent DELETE expectation (404). Remaining checks did not all complete in the interrupted batch. These failures are recorded for follow-up; no real Codex build or Twitch traffic was used.
-- Next: Stage 2 tray and reversible scene removal. Re-run the required full suite, `qa:ui`, and `ui:smoke` after each flow stage. Preserve the Stage 1 commit/tag below.
+- Stage 1 verification: `npx tsc --noEmit`, fake service tests through `test:twitch-clips`, and startup passed. The full regression exposed the pre-existing theme-frame audit findings (Chat Runner theme pixels and a committed community-widget hardcoded color); `check:library` initially still expected permanent removal, then passed after the Stage 2 behavior and fixture were updated. No real Codex build or Twitch traffic was used.
+- Stage 1 commit/tag: `a160f9c`; `flow-s1`.
 
 ### Stage 2 — Easy removal
 
 - Done: added the shared On scene tray with per-widget Turn off and Remove from scene controls, plus a Restore list. Library removal now disables the widget and preserves it; permanent Delete remains on Widgets with a confirmation and local Git history retained. Added moderator-only `!remove <widget name>` with off-scene behavior, dashboard notification, 10-second Undo and later Restore.
 - Verification: `npx tsc --noEmit`, `qa:ui` (all pages/viewports, overlay and reduced motion), `ui:smoke`, and the updated `check:library` passed, including concurrent reversible removal, restore, ten sandboxed previews and 16 passport events. In the full test batch, `test:theme-frames` still failed on the pre-existing Chat Runner theme response and committed community-widget hardcoded color. The batch stalled in `test:sessions`; other checks before it passed.
 - Next: Stage 3 request stepper and plain next actions, then Stage 4 focused policy/undo/tray tests and docs.
+
+### Stage 3 — Clear steps
+
+- Done: every request card now shows Received → Approved → Built → Live, with a state-specific next action. The `built` milestone is recorded only after the four existing checks pass. Failed and rolled-back requests show a friendly action line alongside the redacted reason.
+- Done: automatic promotion is enforced by a server-only policy requiring the eligible setting, an eligible request origin, explicit dashboard intent when applicable, and all four safety checks true.
+- Verification: `npx tsc --noEmit`, `qa:ui` (5 widget themes × 8 pages at three desktop widths plus mobile Overview/Build Studio/Widgets/Library, overlay and reduced motion), and `ui:smoke` passed with zero diagnostics, failed requests or layout/accessibility findings. Stage 2’s full test batch was interrupted in `test:sessions`; the theme-frame findings remain recorded.
+- Next: Stage 4 tests for non-moderator chat, failed checks, disabled setting, undo/restore, moderator-only remove and tray state; update handoff docs and run final regression.

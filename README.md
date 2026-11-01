@@ -89,3 +89,5 @@ Dashboard requests now offer **Approve & build** and **Approve, build and go liv
 To try this safely, use MOCK MODE, submit a request in Overview, approve it from Build queue, then choose Go live in the sandbox preview. The automatic path can be exercised with a dashboard request after selecting the eligible automatic setting. No real Codex build is needed.
 
 The shared **On scene** tray lists enabled widgets and provides separate Turn off and Remove from scene controls. Off widgets stay available in the tray’s Restore list. The Library’s Remove from scene action uses the same reversible behavior. Permanent **Delete** remains on Widgets and keeps local Git version history. Moderators can use `!remove <widget name>`; it takes the widget off scene and provides a 10-second Undo notification.
+
+Every Build queue card shows **Received → Approved → Built → Live** with the current milestone and a plain next action. Blocked and rolled-back cards explain the outcome and the next safe action.

@@ -212,3 +212,10 @@
 - Done: added the global On scene tray, toggle-off/remove/restore actions, reversible Library removal and a moderator-only `!remove <widget name>` command with Undo and Restore. Widgets page Delete remains explicit and preserves Git history.
 - Verified: `npx tsc --noEmit`, `OPEN_BROWSER=false npm run qa:ui`, `OPEN_BROWSER=false npm run ui:smoke`, JS syntax checks, `git diff --check`, and the updated `check:library` passed (10 sandboxed previews, concurrent Add/Remove/Import, restore and 16 events). The full regression batch passed through Hype and stalled in `test:sessions`; `test:theme-frames` remains a pre-existing failure on Chat Runner theme pixels and a committed community widget hardcoded color.
 - Next: Stage 3 clear request steps; Stage 4 policy, restore and tray integration tests.
+
+### Stage 3 — Clear steps
+
+- Done: every queue card displays the four Received, Approved, Built and Live milestones and a plain-language next action. The persisted Built marker is set only after syntax, network, forbidden API and mock-mount checks pass. Failure and rollback cards keep their redacted reason and add a clear next action.
+- Done: centralized automatic promotion eligibility in a server-only policy function. It requires the `eligible` setting, all four checks to pass, moderator origin or explicit dashboard intent; chat viewer and other sources cannot promote automatically.
+- Verified: `npx tsc --noEmit`, `qa:ui` (five widget themes × eight pages at three desktop widths plus mobile on four pages, overlay and reduced motion), and `ui:smoke` passed with zero browser diagnostics, failed requests or layout/accessibility findings. Existing suite findings are recorded in the flow continuation; no real Twitch or Codex traffic was used.
+- Next: Stage 4 automated flow regressions, final documentation and handoff.
