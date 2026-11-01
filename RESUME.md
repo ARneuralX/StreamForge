@@ -62,3 +62,10 @@
 ## Complete
 
 - Requested stage range 4–8 is complete. Earlier stages remain unclaimed; app-theme prerequisite gap is documented above.
+
+## Flow simplification continuation
+
+- Starting checkpoint: `9bc83ae` (`Checkpoint before flow simplification`). Follow `prompts/flow-simplify.md` stages 1–4 in order; this work remains within completed Phase 4B and does not start Phase 5.
+- Stage 1 implementation: queue approval now has explicit build and build-with-auto-promotion choices; Settings persists `afterChecksPass` (`ask` by default, `eligible`, or `never`); the server gates automatic promotion by setting, request origin and successful completion of all existing checks. Non-moderator chat requests always wait at the checked draft. Build Studio labels the final actions Go live and Discard, and live promotion emits a 10-second Undo notification that then reads Remove.
+- Stage 1 verification: `npx tsc --noEmit` passed. Fake service tests through `test:twitch-clips` and startup passed. The complete suite was attempted with mock mode and Twitch disabled; `test:theme-frames` failed on the existing Chat Runner theme response and a committed community widget color, while `check:library` failed its concurrent DELETE expectation (404). Remaining checks did not all complete in the interrupted batch. These failures are recorded for follow-up; no real Codex build or Twitch traffic was used.
+- Next: Stage 2 tray and reversible scene removal. Re-run the required full suite, `qa:ui`, and `ui:smoke` after each flow stage. Preserve the Stage 1 commit/tag below.

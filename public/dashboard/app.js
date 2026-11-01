@@ -75,4 +75,15 @@ async function status() {
 status();
 setInterval(status, 10_000);
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message;if((message.type==="draftResolved"||message.type==="requestDeleted")&&(latestDraftPreview?.requestId===message.requestId||latestDraftPreview?.request?.id===message.requestId))latestDraftPreview=undefined;if(message.type==="buildFeed"){latestBuildFeed.unshift(message);latestBuildFeed=latestBuildFeed.slice(0,40);render();return;}if(message.type==="hype"){paintHype(message.hype);return;}if(message.type==="hypeSettings")return; } catch { /* ignore malformed transport data */ } render(); });
+socket.addEventListener("message", (event) => { try { const message=JSON.parse(event.data); if(message.type==="draftPreview")latestDraftPreview=message;if((message.type==="draftResolved"||message.type==="requestDeleted")&&(latestDraftPreview?.requestId===message.requestId||latestDraftPreview?.request?.id===message.requestId))latestDraftPreview=undefined;if(message.type==="liveToast"){showLiveToast(message);render();return;}if(message.type==="buildFeed"){latestBuildFeed.unshift(message);latestBuildFeed=latestBuildFeed.slice(0,40);render();return;}if(message.type==="hype"){paintHype(message.hype);return;}if(message.type==="hypeSettings")return; } catch { /* ignore malformed transport data */ } render(); });
+
+function showLiveToast(message){
+  document.querySelector("#live-toast")?.remove();
+  const toast=document.createElement("div");toast.id="live-toast";toast.className="live-toast";toast.setAttribute("role","status");
+  const label=document.createElement("span");label.textContent=`${message.title} is live.`;
+  const action=document.createElement("button");action.className="primary";action.textContent="Undo";action.setAttribute("aria-label",`Undo ${message.title} going live`);
+  const close=document.createElement("button");close.textContent="Dismiss";close.setAttribute("aria-label","Dismiss live notification");close.onclick=()=>toast.remove();
+  action.onclick=async()=>{action.disabled=true;try{const response=await fetch(`/api/widgets/${encodeURIComponent(message.widgetId)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:false})});if(!response.ok)throw new Error();toast.remove();await render();}catch{action.disabled=false;label.textContent="Could not take the widget off scene.";}};
+  toast.append(label,action,close);document.body.append(toast);
+  window.setTimeout(()=>{if(toast.isConnected&&action.textContent==="Undo"){action.textContent="Remove";action.setAttribute("aria-label",`Remove ${message.title} from scene`);}},Math.max(1,Number(message.undoSeconds)||10)*1000);
+}

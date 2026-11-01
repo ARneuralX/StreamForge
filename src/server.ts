@@ -24,7 +24,7 @@ import { latestSuccessfulBuildRecording, writeBuildRecording, type BuildRecordin
 import { verifyCodex } from "./codex/verify.js";
 
 type BuildState = "queued" | "approved" | "building" | "checking" | "live" | "failed" | "rolled_back";
-type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string };
+type Request = { id: string; text: string; requester: string; source: string; status: BuildState; createdAt: string; updatedAt?: string; votes?: number; voterIds?: string[]; failure?: string; kind?: "build" | "remix"; widgetId?: string; script?:string; manualReview?:boolean; languageInstruction?:string; autoGoLiveRequested?:boolean };
 type WidgetMeta = { id: string; title: string; description: string; width: number; height: number; x: number; y: number; anchor: string; enabled: boolean; position?: { x: number; y: number }; versionCount?: number; canUndo?: boolean; passport?: WidgetPassport };
 type LibraryEntry = { id: string; widgetId: string; title: string; description: string; originalPrompt: string; creator: string; codeHash?: string; passport?: WidgetPassport };
 type Store = { requests: Request[]; requestHistory: Request[]; widgets: WidgetMeta[]; library: LibraryEntry[]; settings: Record<string, unknown>; widgetStorage?: Record<string, Record<string, unknown>>; codexVerification?: { time: string; ok: boolean; error?: string } };
@@ -99,11 +99,12 @@ const builtinScenes:ScenePreset[]=[
  {id:"hype-mode",name:"Hype Mode",builtIn:true,widgetIds:["dice-roller","boss-bar","screen-effects","goal-bar"],theme:"Neon",safeMode:"off",hypeSensitivity:"high"},
  {id:"ending",name:"Ending",builtIn:true,widgetIds:["screen-effects","goal-bar","countdown-timer"],theme:"Clean",safeMode:"minimal",hypeSensitivity:"low"},
 ];
-const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, widgetStorage:{}, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0, themePreset:"Clean", themeTokens:themePresets.Clean } };
+const defaultStore: Store = { requests: [], requestHistory: [], widgets: starterWidgets, library: librarySeed, widgetStorage:{}, settings: { approval: process.env.APPROVAL || "manual", buildMode: process.env.BUILD_MODE || "mock", autoBuildVotes: 5, autoBuildSeconds: 0, afterChecksPass:"ask", themePreset:"Clean", themeTokens:themePresets.Clean } };
 let store: Store;
 try { store = JSON.parse(await readFile(storePath, "utf8")) as Store; }
 catch { store = defaultStore; }
 store.settings = { ...defaultStore.settings, ...(store.settings || {}) };
+if (!['ask','eligible','never'].includes(String(store.settings.afterChecksPass))) store.settings.afterChecksPass='ask';
 const removedWidgetIds = new Set(Array.isArray(store.settings.removedWidgetIds) ? store.settings.removedWidgetIds.filter((id): id is string => typeof id === "string") : []);
 if (!Array.isArray(store.widgets) || store.widgets.length === 0) store.widgets = starterWidgets.filter((widget) => !removedWidgetIds.has(widget.id));
 for(const widget of starterWidgets)if(!removedWidgetIds.has(widget.id)&&!store.widgets.some((existing)=>existing.id===widget.id))store.widgets.push(widget);
@@ -573,9 +574,20 @@ async function requestDraftApproval(request: Request, widgetId: string, source: 
   const preview = { type: "draftPreview", request: publicRequest(request), requestId: request.id, url: `/api/requests/${request.id}/preview`, widgetId, checks };
   draftPreviewPayloads.set(request.id, preview);
   await persist();
+  const privileged = request.source === "dashboard" || request.source === "moderator";
+  const autoAllowed = store.settings.afterChecksPass === "eligible" && privileged && (request.source === "moderator" || request.autoGoLiveRequested === true);
+  if (autoAllowed) {
+    publish(preview);
+    draftPreviewPayloads.delete(request.id);
+    publish({ type: "draftResolved", requestId: request.id, approved: true, automatic: true });
+    return true;
+  }
   const decision = new Promise<boolean>((resolve) => draftApprovalWaiters.set(request.id, resolve));
   publish(preview);
   return decision;
+}
+function publishLiveToast(request: Request, widgetId: string): void {
+  publish({ type: "liveToast", requestId: request.id, widgetId, title: store.widgets.find((item) => item.id === widgetId)?.title || "Widget", undoSeconds: 10 });
 }
 function settleDraftApproval(requestId: string, approved: boolean): boolean {
   const resolve = draftApprovalWaiters.get(requestId);
@@ -643,7 +655,7 @@ async function mockBuild(request: Request): Promise<void> {
     }
     const promotedWidget=store.widgets.find((item)=>item.id===widgetId);if(promotedWidget){promotedWidget.passport=await widgetPassport(promotedWidget,source,result);const libraryEntry=store.library.find((item)=>item.widgetId===widgetId);if(libraryEntry)libraryEntry.passport=promotedWidget.passport;}
     setState(request, "live"); void sessions.recordBuild(buildStartedAt); buildFeed(request, "Live", "Widget passed checks and is ready on the overlay", result.checks);
-    await persist(); publish({ type: "widgets", widgets: store.widgets });
+    await persist(); publish({ type: "widgets", widgets: store.widgets }); publishLiveToast(request, widgetId);
   } catch (error) {
     if ((error as { code?: string })?.code === "REQUEST_CANCELLED") {
       if (draftDir) await rm(draftDir, { recursive: true, force: true }).catch(() => {});
@@ -755,7 +767,7 @@ async function codexBuild(request: Request): Promise<void> {
     if (request.status === "checking") setState(request, "live");
     succeeded = true;
     void sessions.recordBuild(buildStartedAt);
-    emit("Live", "Widget passed checks and is ready on the overlay.", finalChecks);
+    emit("Live", "Widget passed checks and is ready on the overlay.", finalChecks); publishLiveToast(request, widgetId);
     await persist();
     publish({ type: "widgets", widgets: store.widgets });
   } catch (error) {
@@ -996,7 +1008,7 @@ app.post("/api/chat", async (req, res) => {
     const validation=validateRequestText(buildMatch[1]);const requestText=validation.language?.normalized||"";
     if (validation.ok) {
       recentBuilds.set(userId, Date.now());
-      await createRequest(requestText, "Chat viewer", "chat","build",undefined,{...validation.language!,manualReview:validation.language!.manualReview&&req.body?.isMod!==true});
+      await createRequest(requestText, req.body?.isMod===true?"Moderator":"Chat viewer", req.body?.isMod===true?"moderator":"chat","build",undefined,{...validation.language!,manualReview:validation.language!.manualReview&&req.body?.isMod!==true});
     }
   }
   const remixCommand = /^!remix\s+(.+)$/iu.exec(message);
@@ -1009,7 +1021,7 @@ app.post("/api/chat", async (req, res) => {
     const validation=validateRequestText(body.slice(body.toLocaleLowerCase().startsWith(`${widget.id.toLocaleLowerCase()} `) ? widget.id.length : widget.title.length));
     if (!validation.ok) return res.status(400).json({ok:false,reason:"Enter a safe change of up to 300 characters and avoid blocked content."});const change=validation.language!.normalized;
     recentBuilds.set(userId, Date.now());
-    await createRequest(change, "Chat viewer", "chat", "remix", widget.id,{...validation.language!,manualReview:validation.language!.manualReview&&req.body?.isMod!==true});
+    await createRequest(change, req.body?.isMod===true?"Moderator":"Chat viewer", req.body?.isMod===true?"moderator":"chat", "remix", widget.id,{...validation.language!,manualReview:validation.language!.manualReview&&req.body?.isMod!==true});
   }
   const voteMatch = /^(?:!vote\s+(\d+)|vote\s+(\d+)|\+1)$/iu.exec(message);
   if (voteMatch) {
@@ -1042,9 +1054,9 @@ app.post("/api/requests/:id/:action", async (req, res) => {
   const request = store.requests.find((item) => item.id === req.params.id);
   if (!request) return res.status(404).json({ error: "Request not found." });
   if (request.status !== "queued") return res.status(409).json({ error: "This request is no longer waiting for approval." });
-  const approved = req.params.action === "approve";
+  const approved = req.params.action === "approve" || req.params.action === "approve-auto";
   if (req.params.action === "reject") setState(request, "failed");
-  else if (approved) setState(request, "approved");
+  else if (approved) { request.autoGoLiveRequested = req.params.action === "approve-auto"; setState(request, "approved"); }
   else return res.status(400).json({ error: "Unknown request action." });
   await persist();
   publish({ type: "request", request: publicRequest(request) });
@@ -1124,6 +1136,8 @@ app.post("/api/widgets/:id/remix", async (req, res) => {
 });
 app.patch("/api/settings", async (req, res) => {
   const approval = req.body?.approval;
+  const afterChecksPass = req.body?.afterChecksPass;
+  if (afterChecksPass !== undefined && !["ask", "eligible", "never"].includes(afterChecksPass)) return res.status(400).json({ error: "Choose Ask me, eligible automatic promotion, or never automatic." });
   if (approval !== undefined && !["manual", "auto-votes", "auto-points"].includes(approval)) return res.status(400).json({ error: "Choose manual, vote threshold, or channel points." });
   const votes = req.body?.autoBuildVotes === undefined ? undefined : Number(req.body.autoBuildVotes);
   const seconds = req.body?.autoBuildSeconds === undefined ? undefined : Number(req.body.autoBuildSeconds);
@@ -1136,6 +1150,7 @@ app.patch("/api/settings", async (req, res) => {
   if (retryFailedBuildOnce !== undefined && typeof retryFailedBuildOnce !== "boolean") return res.status(400).json({ error: "Retry setting must be on or off." });
   if(nonEnglishManualApproval!==undefined&&typeof nonEnglishManualApproval!=="boolean")return res.status(400).json({error:"Non-English manual approval setting must be on or off."});
   if (approval !== undefined) store.settings.approval = approval;
+  if (afterChecksPass !== undefined) store.settings.afterChecksPass = afterChecksPass;
   if (votes !== undefined) store.settings.autoBuildVotes = votes;
   if (seconds !== undefined) store.settings.autoBuildSeconds = seconds;
   if (buildTimeoutSeconds !== undefined) store.settings.buildTimeoutSeconds = buildTimeoutSeconds;

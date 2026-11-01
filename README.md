@@ -82,3 +82,8 @@ Scene Presets include Starting Soon, Be Right Back, Hype Mode and Ending. Built-
 - **Demo Director:** open the Demo Director page and choose **Run demo sequence**. Use Speed to change pacing or **Stop and restore** to stop and restore the previous theme, scene, Safe Mode, hype sensitivity and widget set. The sequence is stored at `public/dashboard/demo-sequence.json`, runs only simulated local events, and marks the active session recap SIMULATED.
 
 Useful focused checks: `npm run test:clips`, `npm run test:multilingual`, `npm run test:demo`, `npm run test:sessions`, `npm run test:scenes`, and `npx tsc --noEmit`.
+# Flow simplification
+
+Dashboard requests now offer **Approve & build** and **Approve, build and go live when checks pass**. The latter is an intent only: the server still requires the automatic-promotion setting, an eligible dashboard/moderator source, and passing syntax, static scan, mock-mount, CSP and sandbox checks. Chat viewer requests always wait at the sandbox preview. In Settings, **After checks pass** defaults to **Ask me**; the other choices allow eligible automatic promotion or disable it. A checked draft offers **Go live** and **Discard**. Live promotion shows an Undo action for 10 seconds, followed by Remove.
+
+To try this safely, use MOCK MODE, submit a request in Overview, approve it from Build queue, then choose Go live in the sandbox preview. The automatic path can be exercised with a dashboard request after selecting the eligible automatic setting. No real Codex build is needed.

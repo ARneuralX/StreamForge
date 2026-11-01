@@ -198,3 +198,11 @@
 - Root cause from smoke: initial dashboard rendering and the WebSocket hello could overlap, and handlers retained the detached render container after insertion. The router now orders state/render revisions and commits the same container that page handlers use. The final mock end-to-end smoke passes after this fix.
 - Updated README, Codex-use history and QA report with preview, Library and final regression instructions. No real Twitch traffic, real Codex build, `.env` contents or Phase 5 prompt were accessed. The prohibited `codex:check` gate was not run.
 - Phase 4B stages 2–6 are complete and checkpointed. Stop here; Phase 5 was not started.
+
+## Flow simplification
+
+### Stage 1 — One-click path
+
+- Done: added split approval actions, a persisted server-side `afterChecksPass` setting (default Ask me), explicit Go live/Discard draft controls, and a 10-second Undo notification followed by Remove. The promotion gate still requires eligible source and successful existing checks; non-moderator chat stays at preview.
+- Verified: `npx tsc --noEmit` and the mock/fake service suite through `test:startup` passed. Full regression was attempted with `BUILD_MODE=mock` and Twitch forced off. `test:theme-frames` exposed pre-existing Chat Runner theme pixels and a committed community widget hardcoded-color finding; `check:library` exposed the pre-existing concurrent DELETE route returning 404. The remaining batch did not complete; rerun after Stage 2. No real Codex build or Twitch traffic.
+- Next: Stage 2 reversible scene removal and header tray, then repair/adjust relevant regression coverage without relaxing safety checks.
