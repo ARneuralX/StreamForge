@@ -1,38 +1,29 @@
 export default {
-  meta: {
-    title: "Dice Roller",
-    description: "Roll a twenty-sided die with !roll d20.",
-    width: 440,
-    height: 190,
-    x: 32,
-    y: 32,
-    anchor: "top-left",
-  },
+  meta: { title: "Dice Roller", description: "Roll a die with chat using !roll d20.", width: 440, height: 190, x: 32, y: 32, anchor: "top-left" },
   mount(api) {
-    const heading = document.createElement("h2");
-    heading.textContent = "🎲 Chat Dice";
-
-    const result = document.createElement("p");
+    const title = document.createElement("h2");
+    title.textContent = "🎲 Chat Dice";
+    const result = document.createElement("div");
     result.textContent = "Type !roll d20 to roll";
-    result.setAttribute("aria-live", "polite");
-    api.root.replaceChildren(heading, result);
-
-    const showRoll = (sides) => {
-      const roll = Math.floor(Math.random() * sides) + 1;
-      result.textContent = `Rolled ${roll}${sides === 20 && roll === 20 ? " — Critical! ✨" : ""}`;
-      if (sides === 20 && roll === 20) {
-        api.sound?.play?.("sparkle");
-        api.emit?.("moment", { kind: "natural20", label: "Natural 20" });
-      }
-    };
-
+    const fireworks = document.createElement("div");
+    fireworks.className = "fireworks";
+    fireworks.setAttribute("aria-live", "polite");
+    api.root.append(title, result, fireworks);
+    let lastFlashAt=0;
+    const showCritical=()=>{result.textContent="Rolled 20 — Critical! ✨";const motionScale=Number.isFinite(api.motionScale)?api.motionScale:1;if(Date.now()-lastFlashAt>=333&&motionScale>.15){lastFlashAt=Date.now();fireworks.textContent=motionScale<.75?"✦":"🎆 ✦ ✨ ✦ 🎇";fireworks.className="fireworks active";api.sound?.play?.("sparkle");}api.emit?.("moment",{kind:"natural20",label:"Natural 20"});};
     api.on("chat", (event) => {
-      const message = String(event?.message ?? "").trim().toLowerCase();
-      const match = message.match(/^!\s*roll\s+d(\d+|2o)$/);
-      if (!match) return;
-      const sides = match[1] === "2o" ? 20 : Number(match[1]);
-      if (!Number.isSafeInteger(sides) || sides < 2 || sides > 1000) return;
-      showRoll(sides);
+      const message = String(event.message || "").trim().toLowerCase();
+      if (!message.startsWith("!roll")) return;
+      const roll = Math.floor(Math.random() * 20) + 1;
+      result.textContent = `Rolled ${roll}${roll === 20 ? " — Critical! ✨" : ""}`;
+      if (roll === 20) {
+        showCritical();
+        const motionScale=Number.isFinite(api.motionScale)?api.motionScale:1;if(Date.now()-lastFlashAt>=333&&motionScale>.15){lastFlashAt=Date.now();fireworks.textContent=motionScale<.75?"✦":"🎆 ✦ ✨ ✦ 🎇";fireworks.className="fireworks active";api.sound?.play?.("sparkle");}
+      } else {
+        fireworks.textContent = "";
+        fireworks.className = "fireworks";
+      }
     });
+    api.on("demo-natural20",showCritical);
   },
 };
