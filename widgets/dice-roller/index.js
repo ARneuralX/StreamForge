@@ -1,29 +1,35 @@
 export default {
-  meta: { title: "Dice Roller", description: "Roll a die with chat using !roll d20.", width: 440, height: 190, x: 32, y: 32, anchor: "top-left" },
+  meta: {
+    title: "D20 Roller",
+    description: "Roll a twenty-sided die with !roll d20.",
+    width: 420,
+    height: 180,
+    x: 32,
+    y: 32,
+    anchor: "top-left",
+  },
   mount(api) {
-    const title = document.createElement("h2");
-    title.textContent = "🎲 Chat Dice";
-    const result = document.createElement("div");
+    const heading = document.createElement("h2");
+    heading.textContent = "🎲 D20 Roller";
+
+    const result = document.createElement("p");
+    result.setAttribute("aria-live", "polite");
     result.textContent = "Type !roll d20 to roll";
-    const fireworks = document.createElement("div");
-    fireworks.className = "fireworks";
-    fireworks.setAttribute("aria-live", "polite");
-    api.root.append(title, result, fireworks);
-    let lastFlashAt=0;
-    const showCritical=()=>{result.textContent="Rolled 20 — Critical! ✨";const motionScale=Number.isFinite(api.motionScale)?api.motionScale:1;if(Date.now()-lastFlashAt>=333&&motionScale>.15){lastFlashAt=Date.now();fireworks.textContent=motionScale<.75?"✦":"🎆 ✦ ✨ ✦ 🎇";fireworks.className="fireworks active";api.sound?.play?.("sparkle");}api.emit?.("moment",{kind:"natural20",label:"Natural 20"});};
+
+    api.root.replaceChildren(heading, result);
+
     api.on("chat", (event) => {
-      const message = String(event.message || "").trim().toLowerCase();
-      if (!message.startsWith("!roll")) return;
+      const message = String(event?.message || "").trim().toLowerCase();
+      if (!/^!roll(?:\s+d20)?\s*$/.test(message)) return;
+
       const roll = Math.floor(Math.random() * 20) + 1;
-      result.textContent = `Rolled ${roll}${roll === 20 ? " — Critical! ✨" : ""}`;
+      result.textContent = roll === 20
+        ? "Rolled 20 — Critical! ✨"
+        : `Rolled ${roll}`;
+
       if (roll === 20) {
-        showCritical();
-        const motionScale=Number.isFinite(api.motionScale)?api.motionScale:1;if(Date.now()-lastFlashAt>=333&&motionScale>.15){lastFlashAt=Date.now();fireworks.textContent=motionScale<.75?"✦":"🎆 ✦ ✨ ✦ 🎇";fireworks.className="fireworks active";api.sound?.play?.("sparkle");}
-      } else {
-        fireworks.textContent = "";
-        fireworks.className = "fireworks";
+        api.emit?.("moment", { kind: "natural20", label: "Natural 20" });
       }
     });
-    api.on("demo-natural20",showCritical);
   },
 };
