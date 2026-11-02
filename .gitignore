@@ -5,3 +5,6 @@ replay/*.json
 qa-artifacts/
 node_modules/
 dist/
+.env
+.env.*
+node_modules/
